@@ -34,6 +34,12 @@ also removes the backend.
 * `OVER` for solid + A8 coverage mask -> ARGB8888 / XRGB8888 /
   ABGR8888 / XBGR8888, with a one-kilobyte mask lookup table and
   batched MMI OVER; short spans stay scalar.
+* `OVER` for 8888 source + A8 coverage mask into 8888 destination:
+  64-pixel batches of premultiplied masked source values feed the
+  same four-pixel EE MMI OVER kernel. Includes XRGB/XBGR opaque-source
+  support, with unrelated image/mask/destination alignments.
+* Unmasked solid-color `OVER` into 8888, using an aligned repeated
+  source buffer and the same EE MMI kernel.
 * Unmasked `OVER` from ARGB8888 into RGB565 and from ABGR8888 into
   BGR565, using an aligned eight-pixel scratch block to reuse the
   existing MMI OVER and RGB565 packing kernels.
@@ -41,8 +47,8 @@ also removes the backend.
   XBGR8888 to BGR565.
 
 All other operations continue through the normal Pixman fallback chain.
-Other masked `OVER` variants, component-alpha, and bilinear/nearest
-scaling are **not** accelerated. The RGB565 OVER implementation performs
+Unsupported A8-mask format combinations, component-alpha, and
+bilinear/nearest scaling are **not** accelerated. The RGB565 OVER implementation performs
 scalar RGB565 expansion followed by two MMI OVER blocks and an MMI
 conversion block; its performance is workload-dependent and may not
 beat Pixman's original scalar routine.
@@ -80,6 +86,11 @@ Recommended checks:
 * Solid+A8 mask with all coverage values 0..255, transparent and opaque
   solid sources, mask/destination aliasing, very small widths, and negative
   strides.
+* Image+A8 mask with all coverage values 0..255, source alpha 0/255,
+  XRGB/XBGR source with arbitrary stored high bytes, source/destination
+  and mask/destination aliasing, and different alignment offsets.
+* Solid unmasked OVER with premultiplied colors, alignment offsets,
+  short and long rectangles, and both opaque and translucent colors.
 * RGB565 OVER with mixed-alpha premultiplied input, source/destination
   aliasing, short spans, and destination alignment offsets 0..14 by 2.
 * 16-bit fill for every possible x alignment, odd widths, and negative

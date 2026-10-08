@@ -401,3 +401,190 @@ ee_mmi_composite_over_8888_0565 (pixman_implementation_t *imp,
         dst_line += dst_stride;
     }
 }
+
+
+/*
+ * Non-solid image + A8 mask OVER.
+ *
+ * The mask first modulates the premultiplied source using precisely the
+ * same Pixman byte multiplication as in the scalar combine routines.
+ * We gather 64 masked pixels at a time into a 16-byte-aligned scratch
+ * buffer, then use the common MMI OVER kernel. The mask, source and
+ * destination may have unrelated scanline alignments.
+ *
+ * When either source or mask aliases destination, retain the original
+ * forward pixel-by-pixel traversal, because a batch read-ahead could
+ * change the result.
+ */
+static force_inline void
+masked_image_pixel (uint32_t *dst, uint32_t src, uint8_t mask,
+                    pixman_bool_t src_is_opaque)
+{
+    if (!mask)
+        return;
+
+    if (src_is_opaque)
+        src |= 0xff000000;
+
+    if (mask != 255)
+        UN8x4_MUL_UN8 (src, mask);
+
+    over_pixel (dst, src);
+}
+
+static void
+masked_image_span (uint32_t *dst, const uint32_t *src, const uint8_t *mask,
+                   size_t n, pixman_bool_t src_is_opaque)
+{
+    uint32_t staged[64] __attribute__((aligned(16)));
+    size_t batch, i;
+
+    if (n < 16 ||
+        spans_overlap (src, n * 4, dst, n * 4) ||
+        spans_overlap (mask, n, dst, n * 4))
+    {
+        while (n--)
+        {
+            masked_image_pixel (dst, *src, *mask, src_is_opaque);
+            ++src;
+            ++mask;
+            ++dst;
+        }
+        return;
+    }
+
+    while (n && ((uintptr_t)dst & 15))
+    {
+        masked_image_pixel (dst, *src, *mask, src_is_opaque);
+        ++src;
+        ++mask;
+        ++dst;
+        --n;
+    }
+
+    while (n >= 4)
+    {
+        batch = n >= 64 ? 64 : (n & ~(size_t)3);
+
+        for (i = 0; i < batch; ++i)
+        {
+            uint32_t s = src[i];
+            uint8_t m = mask[i];
+
+            if (src_is_opaque)
+                s |= 0xff000000;
+
+            if (m != 255)
+                UN8x4_MUL_UN8 (s, m);
+
+            staged[i] = s;
+        }
+
+        ee_mmi_over_quads (dst, staged, (unsigned int)(batch / 4),
+                           over_constants);
+        dst += batch;
+        src += batch;
+        mask += batch;
+        n -= batch;
+    }
+
+    while (n--)
+    {
+        masked_image_pixel (dst, *src, *mask, src_is_opaque);
+        ++src;
+        ++mask;
+        ++dst;
+    }
+}
+
+void
+ee_mmi_composite_over_8888_8_8888 (pixman_implementation_t *imp,
+                                   pixman_composite_info_t *info)
+{
+    PIXMAN_COMPOSITE_ARGS (info);
+    uint32_t *src_line, *dst_line;
+    uint8_t *mask_line;
+    int src_stride, dst_stride, mask_stride;
+    pixman_bool_t opaque =
+        (src_image->bits.format == PIXMAN_x8r8g8b8 ||
+         src_image->bits.format == PIXMAN_x8b8g8r8);
+
+    PIXMAN_IMAGE_GET_LINE (src_image, src_x, src_y, uint32_t,
+                           src_stride, src_line, 1);
+    PIXMAN_IMAGE_GET_LINE (mask_image, mask_x, mask_y, uint8_t,
+                           mask_stride, mask_line, 1);
+    PIXMAN_IMAGE_GET_LINE (dest_image, dest_x, dest_y, uint32_t,
+                           dst_stride, dst_line, 1);
+
+    while (height-- > 0)
+    {
+        masked_image_span (dst_line, src_line, mask_line,
+                           (size_t)width, opaque);
+        src_line += src_stride;
+        mask_line += mask_stride;
+        dst_line += dst_stride;
+    }
+}
+
+/*
+ * Solid premultiplied color OVER without mask.
+ *
+ * Allocate a single aligned repeated-source buffer for a composite call.
+ * EE can process up to 64 pixels with one MMI call per destination chunk,
+ * and does not need to fetch a second image from main RAM.
+ */
+void
+ee_mmi_composite_over_solid_8888 (pixman_implementation_t *imp,
+                                  pixman_composite_info_t *info)
+{
+    PIXMAN_COMPOSITE_ARGS (info);
+    uint32_t solid = _pixman_image_get_solid (imp, src_image,
+                                              dest_image->bits.format);
+    uint32_t staged[64] __attribute__((aligned(16)));
+    uint32_t *dst_line, *dst;
+    int dst_stride, y, i;
+    size_t n, batch;
+
+    if (!solid)
+        return;
+
+    for (i = 0; i < 64; ++i)
+        staged[i] = solid;
+
+    PIXMAN_IMAGE_GET_LINE (dest_image, dest_x, dest_y, uint32_t,
+                           dst_stride, dst_line, 1);
+
+    for (y = 0; y < height; ++y)
+    {
+        dst = dst_line;
+        n = (size_t)width;
+
+        if (n < 16)
+        {
+            while (n--)
+                over_pixel (dst++, solid);
+        }
+        else
+        {
+            while (n && ((uintptr_t)dst & 15))
+            {
+                over_pixel (dst++, solid);
+                --n;
+            }
+
+            while (n >= 4)
+            {
+                batch = n >= 64 ? 64 : (n & ~(size_t)3);
+                ee_mmi_over_quads (dst, staged, (unsigned int)(batch / 4),
+                                   over_constants);
+                dst += batch;
+                n -= batch;
+            }
+
+            while (n--)
+                over_pixel (dst++, solid);
+        }
+
+        dst_line += dst_stride;
+    }
+}

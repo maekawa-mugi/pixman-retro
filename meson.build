@@ -453,6 +453,11 @@ if not use_ee_mmi.disabled()
                 "lq $8, 0($sp)\n\t"
                 "lq $9, 0($sp)\n\t"
                 "paddub $8, $8, $9\n\t"
+                "pextlw $10, $8, $9\n\t"
+                "pmulth $10, $8, $9\n\t"
+                "pmfhl.lh $10\n\t"
+                "ppacb $10, $8, $9\n\t"
+                "ppach $10, $8, $9\n\t"
                 "sq $8, 0($sp)\n\t"
                 :
                 :

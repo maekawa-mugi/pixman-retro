@@ -282,8 +282,51 @@ ee_mmi_fill (pixman_implementation_t *imp,
     return TRUE;
 }
 
+/* Composite entry points are compiled from pixman-ee-mmi-over.c. */
+extern void ee_mmi_composite_over_8888 (pixman_implementation_t *,
+                                         pixman_composite_info_t *);
+extern void ee_mmi_composite_src_8888_0565 (pixman_implementation_t *,
+                                             pixman_composite_info_t *);
+extern void ee_mmi_composite_over_n_8_8888 (pixman_implementation_t *,
+                                             pixman_composite_info_t *);
+extern void ee_mmi_composite_over_8888_0565 (pixman_implementation_t *,
+                                              pixman_composite_info_t *);
+extern void ee_mmi_composite_over_8888_8_8888 (pixman_implementation_t *,
+                                                pixman_composite_info_t *);
+extern void ee_mmi_composite_over_solid_8888 (pixman_implementation_t *,
+                                               pixman_composite_info_t *);
+
 static const pixman_fast_path_t ee_mmi_fast_paths[] =
 {
+    /* Premultiplied 8888 source with A8 coverage mask.
+     * X888 variants are treated as fully opaque before masking. */
+    PIXMAN_STD_FAST_PATH (OVER, a8r8g8b8, a8, a8r8g8b8,
+                          ee_mmi_composite_over_8888_8_8888),
+    PIXMAN_STD_FAST_PATH (OVER, a8r8g8b8, a8, x8r8g8b8,
+                          ee_mmi_composite_over_8888_8_8888),
+    PIXMAN_STD_FAST_PATH (OVER, a8b8g8r8, a8, a8b8g8r8,
+                          ee_mmi_composite_over_8888_8_8888),
+    PIXMAN_STD_FAST_PATH (OVER, a8b8g8r8, a8, x8b8g8r8,
+                          ee_mmi_composite_over_8888_8_8888),
+    PIXMAN_STD_FAST_PATH (OVER, x8r8g8b8, a8, a8r8g8b8,
+                          ee_mmi_composite_over_8888_8_8888),
+    PIXMAN_STD_FAST_PATH (OVER, x8r8g8b8, a8, x8r8g8b8,
+                          ee_mmi_composite_over_8888_8_8888),
+    PIXMAN_STD_FAST_PATH (OVER, x8b8g8r8, a8, a8b8g8r8,
+                          ee_mmi_composite_over_8888_8_8888),
+    PIXMAN_STD_FAST_PATH (OVER, x8b8g8r8, a8, x8b8g8r8,
+                          ee_mmi_composite_over_8888_8_8888),
+
+    /* Solid-color alpha OVER without a coverage mask. */
+    PIXMAN_STD_FAST_PATH (OVER, solid, null, a8r8g8b8,
+                          ee_mmi_composite_over_solid_8888),
+    PIXMAN_STD_FAST_PATH (OVER, solid, null, x8r8g8b8,
+                          ee_mmi_composite_over_solid_8888),
+    PIXMAN_STD_FAST_PATH (OVER, solid, null, a8b8g8r8,
+                          ee_mmi_composite_over_solid_8888),
+    PIXMAN_STD_FAST_PATH (OVER, solid, null, x8b8g8r8,
+                          ee_mmi_composite_over_solid_8888),
+
     /* Solid-color glyph/text drawing with an A8 coverage mask. */
     PIXMAN_STD_FAST_PATH (OVER, solid, a8, a8r8g8b8,
                           ee_mmi_composite_over_n_8_8888),
