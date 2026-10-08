@@ -62,9 +62,10 @@ also removes the backend.
   A8 masks may be unaligned; overlapping mask/destination views and
   short spans retain the scalar forward-traversal fallback.
 * `OVER` for 8888 source + A8 coverage mask into 8888 destination:
-  64-pixel batches of premultiplied masked source values feed the
-  same four-pixel EE MMI OVER kernel. Includes XRGB/XBGR opaque-source
-  support, with unrelated image/mask/destination alignments.
+  aligned ARGB/ABGR source/destination use an EE MMI four-pixel fusion
+  of source scaling, dynamic alpha and saturated destination blending.
+  XRGB/XBGR and incompatible alignments retain the staged MMI path;
+  overlapping source/mask/destination views remain forward scalar.
 * Unmasked solid-color `OVER` into 8888, using an aligned repeated
   source buffer and the same EE MMI kernel.
 * Unmasked `OVER` from ARGB8888 into RGB565 and from ABGR8888 into
@@ -171,3 +172,10 @@ The existing Pixman composite tests remain necessary for sub-16-pixel
 spans, clipping, negative strides and overlapping mask/destination buffers.
 Measure wall time/cycles relative to `PIXMAN_DISABLE=ee-mmi`: removing
 staging does not guarantee a speedup on the R5900.
+
+## Image+A8 fused MMI differential test
+
+`test/ee-mmi-image-a8-fused-test.c` directly exercises the new assembly
+kernel with 16,000 source/destination random and alpha-edge test cases,
+coverage 0..255, arbitrary A8 byte alignment 0..15, and whole-array input
+and destination-canary checks. The fifth o32 argument is read at 16(sp).

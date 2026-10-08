@@ -11,9 +11,10 @@ ASM = pixman/pixman-ee-mmi-asm.S \
       pixman/pixman-ee-mmi-over-asm.S \
       pixman/pixman-ee-mmi-ca-asm.S \
       pixman/pixman-ee-mmi-a8-asm.S \
+      pixman/pixman-ee-mmi-image-a8-asm.S \
       pixman/pixman-ee-mmi-565-asm.S
 OBJS = $(BUILD)/suite.o $(BUILD)/bench.o \
-       $(BUILD)/ca.o $(BUILD)/a8.o $(BUILD)/rgb565.o
+       $(BUILD)/ca.o $(BUILD)/a8.o $(BUILD)/rgb565.o $(BUILD)/image_a8.o
 
 .PHONY: all clean
 all: $(OUT)
@@ -27,6 +28,8 @@ $(BUILD)/ca.o: test/ee-mmi-ca-fused-test.c | $(BUILD)
 	$(EE_CC) $(EE_CFLAGS) -Dmain=ee_test_ca -c $< -o $@
 $(BUILD)/a8.o: test/ee-mmi-a8-fused-test.c | $(BUILD)
 	$(EE_CC) $(EE_CFLAGS) -Dmain=ee_test_solid_a8 -c $< -o $@
+$(BUILD)/image_a8.o: test/ee-mmi-image-a8-fused-test.c | $(BUILD)
+	$(EE_CC) $(EE_CFLAGS) -Dmain=ee_test_image_a8 -c $< -o $@
 $(BUILD)/rgb565.o: test/ee-mmi-565-fused-test.c | $(BUILD)
 	$(EE_CC) $(EE_CFLAGS) -Dmain=ee_test_565 -c $< -o $@
 $(OUT): $(OBJS) $(ASM)

@@ -17,7 +17,7 @@ stdout/stderr, including the exit status:
 echo "EXIT_CODE=$?" >> ee-mmi-results.txt
 ```
 
-The suite combines the pre-existing component-alpha, solid+A8, and RGB565
+The suite combines the pre-existing component-alpha, solid+A8, RGB565, and image+A8
 differential tests, adds scalar-vs-MMI tests of ADD, COPY, FILL, A8 IN,
 unmasked 8888 OVER, and 8888-to-565 SRC. All aligned assembly tests
 include zero counts and untouched canaries. The timing section emits
@@ -49,3 +49,7 @@ backend enabled/disabled; test exit status; elapsed microseconds; CPU
 clock/emulator version; 8/16/32bpp and 565 alignment/repeat/negative-stride
 results. The Meson Pixman tests are needed to cover routing and clipping
 beyond direct assembly entry points.
+
+The fused image+A8 case is compiled as a fourth independent differential
+test inside the same one-shot suite. It targets the actual o32 fifth
+argument and all 256 coverage values.
