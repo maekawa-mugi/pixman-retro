@@ -73,7 +73,7 @@ When `-Dee-mmi=enabled`, Meson also builds the
 `ee-mmi-pixman-bench` executable in `test/`. Include that binary in the
 directory passed as the second argument to `run-ee-mmi-all.sh`.
 The runner executes it twice, once with EE MMI enabled and once with
-`PIXMAN_DISABLE=ee-mmi`. The `PIXMAN_BENCH` CSV lines cover 14 Pixman
+`PIXMAN_DISABLE=ee-mmi`. The `PIXMAN_BENCH` CSV lines cover 18 Pixman
 API workloads, including masked OVER, component-alpha, RGB565, nearest
 and bilinear scaling, ADD, SRC, IN, BLT and fill, at 16x2, 64x16,
 and 256x64. Compare the checksum field between enabled/disabled modes
@@ -96,7 +96,7 @@ sh test/package-ee-mmi.sh build-ee/test ee-mmi-test-kit.tar.gz
 
 Copy only the generated archive to PS2 Linux, unpack it, and follow
 `README-RUN.txt`. Retrieve `ee-mmi-results.log` once. The runner
-collects failures without stopping and compares all 42 Pixman API
+collects failures without stopping and compares all 54 Pixman API
 benchmark checksums across MMI-enabled and generic-C runs, reporting
 `EE_PIXEL_MISMATCH` on differences. The log includes platform info,
 all unit-test failures, all microbench CSV lines and all Pixman API
@@ -121,3 +121,14 @@ and `glyph-test` with EE MMI enabled **and** disabled. The packager
 includes these if they exist in the Meson test build. Missing tests
 are marked as failures in full mode. Full mode can be slow on the
 R5900 but avoids another round-trip to investigate obscure pixels.
+
+## Scaled nearest / bilinear coverage
+
+The API benchmark now includes 1:1 nearest (ARGB and XRGB), and two
+one-axis bilinear filters (horizontal-only and vertical-only). These are
+in addition to the existing fully 2D nearest and bilinear benchmarks.
+There are **18 workloads x 3 image dimensions = 54 rows** per MMI/C
+run, all compared for matching checksums. A separate standalone
+`ee-mmi-scale-test.c` verifies direct opaque-copy and 2-tap MMI
+interpolation across all weight endpoints and edge cases, integrated
+into `ee-mmi-suite` and `host-check`.

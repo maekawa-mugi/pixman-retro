@@ -81,7 +81,7 @@ if [ -n "$TEST_DIR" ]; then
                     nseen++
                 }
                 END {
-                    if (nref!=42 || nseen!=42) {
+                    if (nref!=54 || nseen!=54) {
                         print "EE_CHECKSUM_INCOMPLETE,EE=" nref ",C=" nseen
                         bad++
                     }

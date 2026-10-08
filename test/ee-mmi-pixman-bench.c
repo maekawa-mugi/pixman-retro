@@ -65,13 +65,18 @@ static uint32_t checksum(int format)
 enum {
     B_OVER8888, B_IMAGE_A8, B_SOLID_A8, B_IMAGE_CA, B_SOLID_CA,
     B_OVER565, B_SRC565, B_ADD, B_SRC, B_IN_A8, B_FILL, B_BLT,
-    B_NEAREST, B_BILINEAR, B_COUNT
+    B_NEAREST, B_BILINEAR,
+    B_NEAREST_1X, B_NEAREST_XRGB_1X,
+    B_BILINEAR_X_ONLY, B_BILINEAR_Y_ONLY,
+    B_COUNT
 };
 static const char *const names[B_COUNT]={
     "OVER_8888","OVER_IMAGE_A8","OVER_SOLID_A8","OVER_IMAGE_CA",
     "OVER_SOLID_CA","OVER_RGB565","SRC_8888_565","ADD_8888",
     "SRC_8888","IN_A8","FILL_8888","BLT_8888",
-    "NEAREST_OVER","BILINEAR_OVER"
+    "NEAREST_OVER","BILINEAR_OVER",
+    "NEAREST_1X","NEAREST_XRGB_1X",
+    "BILINEAR_X_ONLY","BILINEAR_Y_ONLY"
 };
 static int measure_case(int kind,int width,int height)
 {
@@ -97,7 +102,10 @@ static int measure_case(int kind,int width,int height)
         else if(kind==B_IN_A8)
             src=pixman_image_create_bits(PIXMAN_a8,W,H,(uint32_t *)src8,W);
         else
-            src=pixman_image_create_bits(PIXMAN_a8r8g8b8,W,H,src32,W*4);
+            src=pixman_image_create_bits(
+                kind==B_NEAREST_XRGB_1X ? PIXMAN_x8r8g8b8 :
+                                           PIXMAN_a8r8g8b8,
+                W,H,src32,W*4);
 
         if(kind==B_IMAGE_A8 || kind==B_SOLID_A8)
             mask=pixman_image_create_bits(PIXMAN_a8,W,H,(uint32_t *)mask8,W);
@@ -125,14 +133,24 @@ static int measure_case(int kind,int width,int height)
             if(dst)pixman_image_unref(dst);
             return 1;
         }
-        if(kind==B_NEAREST || kind==B_BILINEAR)
+        if(kind==B_NEAREST || kind==B_BILINEAR ||
+           kind==B_NEAREST_1X || kind==B_NEAREST_XRGB_1X ||
+           kind==B_BILINEAR_X_ONLY || kind==B_BILINEAR_Y_ONLY)
         {
-            pixman_transform_init_scale(&scale,pixman_fixed_1/2,
-                                        pixman_fixed_1/2);
+            pixman_fixed_t sx=pixman_fixed_1,sy=pixman_fixed_1;
+            if(kind==B_NEAREST || kind==B_BILINEAR)
+                sx=sy=pixman_fixed_1/2;
+            else if(kind==B_BILINEAR_X_ONLY)
+                sx=pixman_fixed_1/2;
+            else if(kind==B_BILINEAR_Y_ONLY)
+                sy=pixman_fixed_1/2;
+
+            pixman_transform_init_scale(&scale,sx,sy);
             pixman_image_set_transform(src,&scale);
-            pixman_image_set_filter(src,kind==B_NEAREST?
-                                    PIXMAN_FILTER_NEAREST:PIXMAN_FILTER_BILINEAR,
-                                    0,0);
+            pixman_image_set_filter(src,
+                kind==B_NEAREST || kind==B_NEAREST_1X ||
+                kind==B_NEAREST_XRGB_1X ?
+                PIXMAN_FILTER_NEAREST:PIXMAN_FILTER_BILINEAR,0,0);
             pixman_image_set_repeat(src,PIXMAN_REPEAT_PAD);
         }
         if(kind==B_ADD)op=PIXMAN_OP_ADD;
