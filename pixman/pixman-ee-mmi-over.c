@@ -456,9 +456,11 @@ masked_image_pixel (uint32_t *dst, uint32_t src, uint8_t mask,
     over_pixel (dst, src);
 }
 
-static void
-masked_image_span (uint32_t *dst, const uint32_t *src, const uint8_t *mask,
-                   size_t n, pixman_bool_t src_is_opaque)
+/* Keep 256-byte staging frame off the directly fused path. */
+static void __attribute__((noinline))
+masked_image_span_staged (uint32_t *dst, const uint32_t *src,
+                          const uint8_t *mask, size_t n,
+                          pixman_bool_t src_is_opaque)
 {
     uint32_t staged[64] __attribute__((aligned(16)));
     size_t batch, i;
@@ -521,6 +523,52 @@ masked_image_span (uint32_t *dst, const uint32_t *src, const uint8_t *mask,
     }
 }
 
+/* Fifth pointer argument is loaded from 16(sp), PS2 Linux o32. */
+extern void ee_mmi_over_image_a8_quads (uint32_t *dst, const uint32_t *src,
+                                        const uint8_t *mask,
+                                        unsigned int quads,
+                                        const uint16_t *constants);
+static void
+masked_image_span_fused (uint32_t *dst, const uint32_t *src,
+                         const uint8_t *mask, size_t n, pixman_bool_t opaque)
+{
+    size_t blocks;
+    if (opaque || n < 16 ||
+        (((uintptr_t)dst ^ (uintptr_t)src) & 15) ||
+        spans_overlap (src, n * 4, dst, n * 4) ||
+        spans_overlap (mask, n, dst, n * 4))
+    {
+        masked_image_span_staged (dst, src, mask, n, opaque);
+        return;
+    }
+
+    while (n && ((uintptr_t)dst & 15))
+    {
+        masked_image_pixel (dst, *src, *mask, FALSE);
+        ++dst;
+        ++src;
+        ++mask;
+        --n;
+    }
+    blocks = n / 4;
+    if (blocks)
+    {
+        ee_mmi_over_image_a8_quads (dst, src, mask,
+                                    (unsigned int)blocks, over_constants);
+        dst += 4 * blocks;
+        src += 4 * blocks;
+        mask += 4 * blocks;
+        n -= 4 * blocks;
+    }
+    while (n--)
+    {
+        masked_image_pixel (dst, *src, *mask, FALSE);
+        ++dst;
+        ++src;
+        ++mask;
+    }
+}
+
 void
 ee_mmi_composite_over_8888_8_8888 (pixman_implementation_t *imp,
                                    pixman_composite_info_t *info)
@@ -542,8 +590,8 @@ ee_mmi_composite_over_8888_8_8888 (pixman_implementation_t *imp,
 
     while (height-- > 0)
     {
-        masked_image_span (dst_line, src_line, mask_line,
-                           (size_t)width, opaque);
+        masked_image_span_fused (dst_line, src_line, mask_line,
+                                 (size_t)width, opaque);
         src_line += src_stride;
         mask_line += mask_stride;
         dst_line += dst_stride;

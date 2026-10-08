@@ -60,6 +60,7 @@ simds = [
   ['ee-mmi', have_ee_mmi, [],
    ['pixman-ee-mmi-asm.S', 'pixman-ee-mmi-over.c',
     'pixman-ee-mmi-over-asm.S', 'pixman-ee-mmi-a8-asm.S',
+    'pixman-ee-mmi-image-a8-asm.S',
     'pixman-ee-mmi-ca.c',
     'pixman-ee-mmi-ca-asm.S', 'pixman-ee-mmi-565-asm.S',
     'pixman-ee-mmi-nearest.c',
