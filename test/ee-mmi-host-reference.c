@@ -143,3 +143,29 @@ void ee_mmi_over_image_ca_quads(uint32_t *dst,const uint32_t *src,
     unsigned int i;(void)constants;
     for(i=0;i<blocks*4;i++)dst[i]=blend_ca(src[i],dst[i],mask[i]);
 }
+
+/* Native testing substitutes. These do not validate R5900 instructions. */
+void ee_mmi_nearest_opaque_quads(uint32_t *dst,const uint32_t *src,
+                                  unsigned int quads,const uint32_t *alpha)
+{
+    unsigned int i;
+    for(i=0;i<quads*4;i++)dst[i]=src[i]|alpha[i&3];
+}
+void ee_mmi_bilinear_lerp_quads(uint32_t *dst,const uint32_t *first,
+                                 const uint32_t *second,
+                                 const uint16_t *weights,unsigned int quads)
+{
+    unsigned int i,j;
+    for(i=0;i<quads*4;i++)
+    {
+        unsigned int weight_index=(i/4)*32+((i&2)?8:0)+((i&1)?4:0);
+        unsigned int w=weights[weight_index+16];
+        uint32_t out=0;
+        for(j=0;j<32;j+=8)
+        {
+            unsigned int a=(first[i]>>j)&255,b=(second[i]>>j)&255;
+            out|=(uint32_t)((a*(256-w)+b*w)>>8)<<j;
+        }
+        dst[i]=out;
+    }
+}
