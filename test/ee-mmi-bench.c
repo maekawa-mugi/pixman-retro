@@ -1,7 +1,8 @@
 /* Comparable C/MMI microbenchmarks for EE. Uses gettimeofday() for
  * old PS2 Linux libc compatibility; timings <1us are reported as N/A.
  * These are hot-loop kernel timings, not Pixman end-to-end speed.
- * For 565 kernels the bytes field means output bytes; source uses 2*bytes.
+ * For 565 and bilinear vertical/horizontal kernels the bytes field means
+ * 8888 input/output bytes; HSum writes 2*bytes, VFinish reads 2*bytes.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -18,6 +19,8 @@ extern void ee_mmi_over_image_a8_quads(uint32_t *,const uint32_t *,const uint8_t
 extern void ee_mmi_over_image_ca_quads(uint32_t *,const uint32_t *,const uint32_t *,unsigned int,const uint16_t *);
 extern void ee_mmi_nearest_opaque_quads(uint32_t *,const uint32_t *,unsigned int,const uint32_t *);
 extern void ee_mmi_bilinear_lerp_quads(uint32_t *,const uint32_t *,const uint32_t *,const uint16_t *,unsigned int);
+extern void ee_mmi_bilinear_hsum_quads(uint16_t *,const uint32_t *,const uint32_t *,const uint16_t *,unsigned int);
+extern void ee_mmi_bilinear_vfinish_quads(uint32_t *,const uint16_t *,const uint16_t *,const uint16_t *,unsigned int);
 extern void ee_mmi_over_8888_0565_quads(uint16_t *,const uint32_t *,unsigned int,const uint32_t *);
 extern void ee_mmi_8888_to_0565_quads(uint16_t *,const uint32_t *,unsigned int,const uint32_t *);
 #define CAP 32768
@@ -27,6 +30,12 @@ static uint8_t mask_bytes[CAP] __attribute__((aligned(16)));
 static uint8_t source_second[CAP] __attribute__((aligned(16)));
 /* 64 bytes of two-tap weights per 16 bytes output (4 pixels). */
 static uint16_t two_tap_weights[CAP * 2] __attribute__((aligned(16)));
+static const uint16_t vertical_weights[24] __attribute__((aligned(16))) =
+{
+    192,192,192,192,192,192,192,192,
+    64,64,64,64,64,64,64,64,
+    255,255,255,255,255,255,255,255
+};
 static const uint32_t opaque_alpha[4] __attribute__((aligned(16))) =
 {0xff000000u,0xff000000u,0xff000000u,0xff000000u};
 static const uint32_t fill_pattern[4] __attribute__((aligned(16))) =
@@ -144,6 +153,14 @@ static void run_kernel(int id,int mmi,unsigned int bytes)
                                            (const uint32_t *)source,
                                            (const uint32_t *)source_second,
                                            two_tap_weights,n);break;
+        case 13:ee_mmi_bilinear_hsum_quads((uint16_t *)dest,
+                                           (const uint32_t *)source,
+                                           (const uint32_t *)source_second,
+                                           two_tap_weights,n);break;
+        case 14:ee_mmi_bilinear_vfinish_quads((uint32_t *)dest,
+                                              (const uint16_t *)source,
+                                              (const uint16_t *)source_second,
+                                              vertical_weights,n);break;
         }
     }
     else
@@ -230,6 +247,37 @@ static void run_kernel(int id,int mmi,unsigned int bytes)
                 ((uint32_t *)dest)[i]=result;
             }
             break;
+        case 13:
+            for(i=0;i<bytes/4;i++)
+            {
+                uint32_t first=((uint32_t *)source)[i];
+                uint32_t second=((uint32_t *)source_second)[i];
+                unsigned int c,off=(i/4)*32+((i&2)?8:0)+((i&1)?4:0);
+                unsigned int w0=two_tap_weights[off];
+                unsigned int w1=two_tap_weights[off+16];
+                for(c=0;c<4;c++)
+                {
+                    unsigned int sh=c*8;
+                    ((uint16_t *)dest)[i*4+c]=(uint16_t)(
+                        ((first>>sh)&255)*w0+((second>>sh)&255)*w1);
+                }
+            }
+            break;
+        case 14:
+            for(i=0;i<bytes/4;i++)
+            {
+                unsigned int c;
+                uint32_t pixel=0;
+                for(c=0;c<4;c++)
+                {
+                    unsigned int ix=i*4+c;
+                    uint32_t sum=((const uint16_t *)source)[ix]*192u+
+                                 ((const uint16_t *)source_second)[ix]*64u;
+                    pixel|=(sum>>16)<<(c*8);
+                }
+                ((uint32_t *)dest)[i]=pixel;
+            }
+            break;
         }
     }
 }
@@ -276,12 +324,13 @@ void ee_mmi_bench_run(void)
     {"ADD","COPY","FILL","A8_IN","OVER_8888",
      "OVER_SOLID_CA","OVER_SOLID_A8","OVER_IMAGE_A8",
      "OVER_RGB565","SRC_8888_565","OVER_IMAGE_CA",
-     "NEAREST_OPAQUE_COPY","BILINEAR_2TAP"};
+     "NEAREST_OPAQUE_COPY","BILINEAR_2TAP",
+     "BILINEAR_HSUM","BILINEAR_VFINISH"};
     static const unsigned int sizes[]={64,256,1024,4096,16384};
     unsigned int kind,k,loops,bytes;
     unsigned long ctime,mtime;
     puts("BENCH_CSV,kernel,bytes,iterations,c_us,mmi_us,speedup");
-    for(kind=0;kind<13;kind++)
+    for(kind=0;kind<15;kind++)
         for(k=0;k<5;k++)
         {
             bytes=sizes[k];
