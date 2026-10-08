@@ -117,6 +117,41 @@ main (void)
         }
     }
 
-    puts ("PASS: 16000 EE RGB565 fused OVER comparisons");
+    /* Exhaustive destination RGB565 values with alpha=0, 128 and 255.
+     * This catches errors in 5/6-bit expansion and re-quantization at
+     * every bit boundary, not only pseudorandomly sampled colors.
+     */
+    {
+        static const uint32_t solids[3] =
+        {
+            0x00000000u, 0x80201008u, 0xff112233u
+        };
+        unsigned int mode, base;
+        for (mode = 0; mode < 3; ++mode)
+        {
+            for (base = 0; base < 65536; base += PIXELS)
+            {
+                for (i = 0; i < PIXELS + GUARD; ++i)
+                {
+                    src[i] = solids[mode];
+                    dst[i] = i < PIXELS ? (uint16_t)(base + i) :
+                                               (uint16_t)rng ();
+                    expect[i] = i < PIXELS ?
+                                reference (src[i], dst[i]) : dst[i];
+                }
+                memcpy (src_copy, src, sizeof (src));
+                ee_mmi_over_8888_0565_quads (dst, src, PIXELS / 8,
+                                               constants);
+                if (memcmp (dst, expect, sizeof (dst)) ||
+                    memcmp (src, src_copy, sizeof (src)))
+                {
+                    printf ("FAIL exhaustive mode=%u base=%u\\n", mode, base);
+                    return 1;
+                }
+            }
+        }
+    }
+
+    puts ("PASS: 16000 random cases and 196608 exhaustive RGB565 pixels");
     return 0;
 }
