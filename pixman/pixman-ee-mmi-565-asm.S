@@ -21,9 +21,10 @@
 ee_mmi_over_8888_0565_quads:
     beqz    $a2, 2f
      nop
+1:
+    /* Packing overwrites v0/v1. Reload expansion masks each block. */
     lq      $v0, 0($a3)     /* eight 5-bit masks */
     lq      $v1, 16($a3)    /* eight 6-bit masks */
-1:
     lq      $t0, 0($a0)     /* eight RGB565 destination pixels */
     lq      $t1, 0($a1)     /* source pixels 0..3 */
     lq      $t2, 16($a1)    /* source pixels 4..7 */
