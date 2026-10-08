@@ -1,6 +1,7 @@
 /*
  * PS2 Emotion Engine R5900 128-bit MMI scanline kernels.
- * o32 ABI; arguments are a0, a1, a2. Only caller-saved t0/t1 are clobbered.
+ * o32 ABI; arguments are a0-a2 (a3 for A8 IN).
+ * Only caller-saved GPRs are used, including t0-t8 and v1.
  * All LQ/SQ operands are 16-byte aligned. Zero-count calls are safe.
  */
     .text
