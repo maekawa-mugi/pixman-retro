@@ -195,11 +195,14 @@ ee_mmi_composite_src_8888_0565 (pixman_implementation_t *imp,
 /*
  * Solid + A8 coverage mask -> premultiplied 8888 OVER.
  *
- * A local 256-entry table performs the EXACT Pixman multiply-by-mask
- * rounding once per coverage value. Large scanlines then use the EE's
- * four-pixel OVER kernel on an aligned batch of masked source pixels.
- * For tiny spans, scalar processing avoids paying for table creation.
+ * The EE MMI kernel expands four coverage bytes in registers and performs
+ * exact channel multiply, inverse alpha, and OVER without an intermediate
+ * masked-source buffer or per-call 256-entry lookup table.
  */
+extern void ee_mmi_over_solid_a8_quads (uint32_t *dst, const uint8_t *mask,
+                                         unsigned int quads,
+                                         const uint32_t *constants);
+
 static force_inline void
 masked_solid_pixel (uint32_t *dst, uint32_t solid, uint8_t mask)
 {
@@ -226,50 +229,41 @@ masked_solid_pixel (uint32_t *dst, uint32_t solid, uint8_t mask)
 
 static void
 masked_solid_span (uint32_t *dst, const uint8_t *mask, size_t n,
-                   uint32_t solid, const uint32_t *table)
+                   uint32_t solid, const uint32_t *constants)
 {
-    uint32_t masked[64] __attribute__((aligned(16)));
-    size_t i, count;
+    size_t blocks;
 
-    /* Staging a batch of masks could change results when the A8 mask
-     * aliases the output pixels. Preserve the C implementation's
-     * forward read/modify/write ordering in that case.
+    /* Reading ahead four masks changes the original forward traversal
+     * when source bytes overlap the destination pixels.
      */
-    if (!table || spans_overlap (mask, n, dst, n * 4))
+    if (n < 16 || spans_overlap (mask, n, dst, n * 4))
     {
         while (n--)
-        {
-            masked_solid_pixel (dst, solid, *mask++);
-            ++dst;
-        }
+            masked_solid_pixel (dst++, solid, *mask++);
         return;
     }
 
+    /* SQ/LQ silently round down addresses on the EE. A8 mask loads in
+     * the fused kernel are four independent LBU and need no alignment.
+     */
     while (n && ((uintptr_t)dst & 15))
     {
-        masked_solid_pixel (dst, solid, *mask++);
-        ++dst;
+        masked_solid_pixel (dst++, solid, *mask++);
         --n;
     }
 
-    while (n >= 4)
+    blocks = n / 4;
+    if (blocks)
     {
-        count = n < 64 ? (n & ~(size_t)3) : 64;
-        for (i = 0; i < count; ++i)
-            masked[i] = table[mask[i]];
-
-        ee_mmi_over_quads (dst, masked, (unsigned int)(count / 4),
-                           over_constants);
-        dst += count;
-        mask += count;
-        n -= count;
+        ee_mmi_over_solid_a8_quads (dst, mask, (unsigned int)blocks,
+                                    constants);
+        dst += blocks * 4;
+        mask += blocks * 4;
+        n -= blocks * 4;
     }
 
     while (n--)
-    {
-        masked_solid_pixel (dst, solid, *mask++);
-        ++dst;
-    }
+        masked_solid_pixel (dst++, solid, *mask++);
 }
 
 void
@@ -279,30 +273,22 @@ ee_mmi_composite_over_n_8_8888 (pixman_implementation_t *imp,
     PIXMAN_COMPOSITE_ARGS (info);
     uint32_t *dst_line, color;
     uint8_t *mask_line;
-    int dst_stride, mask_stride, row;
-    uint32_t table[256];
-    pixman_bool_t use_table;
+    uint32_t constants[16] __attribute__((aligned(16)));
+    uint32_t alpha_word;
+    int dst_stride, mask_stride, row, i;
 
     color = _pixman_image_get_solid (imp, src_image, dest_image->bits.format);
     if (color == 0)
         return;
 
-    /* A 256-entry lookup table is wasted setup for tiny rectangles.
-     * Divide instead of multiplying width * height to avoid overflow.
-     * Retain the scalar path for scanlines shorter than 32 pixels.
-     */
-    use_table = width >= 32 && height > 0 &&
-                (width >= 256 || height > 255 / width);
-    if (use_table)
+    alpha_word = color >> 24;
+    alpha_word |= alpha_word << 16;
+    for (i = 0; i < 4; ++i)
     {
-        unsigned int m;
-        for (m = 0; m != 256; ++m)
-        {
-            uint32_t s = color;
-            if (m != 255)
-                UN8x4_MUL_UN8 (s, m);
-            table[m] = s;
-        }
+        constants[i] = color;
+        constants[i + 4] = 0x00800080u;
+        constants[i + 8] = alpha_word;
+        constants[i + 12] = 0x00ff00ffu;
     }
 
     PIXMAN_IMAGE_GET_LINE (dest_image, dest_x, dest_y, uint32_t,
@@ -313,7 +299,7 @@ ee_mmi_composite_over_n_8_8888 (pixman_implementation_t *imp,
     for (row = 0; row < height; ++row)
     {
         masked_solid_span (dst_line, mask_line, (size_t)width,
-                           color, use_table ? table : NULL);
+                           color, constants);
         dst_line += dst_stride;
         mask_line += mask_stride;
     }

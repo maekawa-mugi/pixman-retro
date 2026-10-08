@@ -56,8 +56,11 @@ also removes the backend.
 * Premultiplied-alpha `OVER` for ARGB8888 / ABGR8888 to matching 32-bit
   destinations (including the XRGB8888/XBGR8888 destination variants).
 * `OVER` for solid + A8 coverage mask -> ARGB8888 / XRGB8888 /
-  ABGR8888 / XBGR8888, with a one-kilobyte mask lookup table and
-  batched MMI OVER; short spans stay scalar.
+  ABGR8888 / XBGR8888. A fused four-pixel EE MMI kernel expands
+  four A8 bytes in registers and performs exact masked-source and OVER
+  blending without the old 1 KiB LUT or 256-byte staging buffer.
+  A8 masks may be unaligned; overlapping mask/destination views and
+  short spans retain the scalar forward-traversal fallback.
 * `OVER` for 8888 source + A8 coverage mask into 8888 destination:
   64-pixel batches of premultiplied masked source values feed the
   same four-pixel EE MMI OVER kernel. Includes XRGB/XBGR opaque-source
@@ -153,3 +156,16 @@ write canaries. Compile with the EE toolchain together with
 `pixman/pixman-ee-mmi-ca-asm.S`. The original Pixman composite tests
 must also cover unaligned and overlapping masks/destinations.
 Performance on PS2 hardware and PCSX2 has not yet been measured.
+
+## Fused solid + A8 regression test
+
+The standalone `test/ee-mmi-a8-fused-test.c` compares the actual EE assembly
+against a scalar exact-/255 reference. It tests all 256 coverage values,
+unaligned A8 mask pointers (offsets 0..15), 0..32 MMI blocks, transparent
+and opaque solids, randomized destinations, and untouched canary bytes.
+Build with an EE-targeted compiler together with
+`pixman/pixman-ee-mmi-a8-asm.S`. Run on PCSX2 and real hardware.
+The existing Pixman composite tests remain necessary for sub-16-pixel
+spans, clipping, negative strides and overlapping mask/destination buffers.
+Measure wall time/cycles relative to `PIXMAN_DISABLE=ee-mmi`: removing
+staging does not guarantee a speedup on the R5900.
