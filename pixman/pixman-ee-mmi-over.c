@@ -191,3 +191,213 @@ ee_mmi_composite_src_8888_0565 (pixman_implementation_t *imp,
         dst_line += dst_stride;
     }
 }
+
+/*
+ * Solid + A8 coverage mask -> premultiplied 8888 OVER.
+ *
+ * A local 256-entry table performs the EXACT Pixman multiply-by-mask
+ * rounding once per coverage value. Large scanlines then use the EE's
+ * four-pixel OVER kernel on an aligned batch of masked source pixels.
+ * For tiny spans, scalar processing avoids paying for table creation.
+ */
+static force_inline void
+masked_solid_pixel (uint32_t *dst, uint32_t solid, uint8_t mask)
+{
+    uint32_t s, d;
+
+    if (mask == 0)
+        return;
+
+    s = solid;
+    if (mask != 255)
+        UN8x4_MUL_UN8 (s, mask);
+
+    if ((s >> 24) == 255)
+    {
+        *dst = s;
+    }
+    else
+    {
+        d = *dst;
+        UN8x4_MUL_UN8_ADD_UN8x4 (d, (~s) >> 24, s);
+        *dst = d;
+    }
+}
+
+static void
+masked_solid_span (uint32_t *dst, const uint8_t *mask, size_t n,
+                   uint32_t solid, const uint32_t *table)
+{
+    uint32_t masked[64] __attribute__((aligned(16)));
+    size_t i, count;
+
+    /* Staging a batch of masks could change results when the A8 mask
+     * aliases the output pixels. Preserve the C implementation's
+     * forward read/modify/write ordering in that case.
+     */
+    if (!table || spans_overlap (mask, n, dst, n * 4))
+    {
+        while (n--)
+        {
+            masked_solid_pixel (dst, solid, *mask++);
+            ++dst;
+        }
+        return;
+    }
+
+    while (n && ((uintptr_t)dst & 15))
+    {
+        masked_solid_pixel (dst, solid, *mask++);
+        ++dst;
+        --n;
+    }
+
+    while (n >= 4)
+    {
+        count = n < 64 ? (n & ~(size_t)3) : 64;
+        for (i = 0; i < count; ++i)
+            masked[i] = table[mask[i]];
+
+        ee_mmi_over_quads (dst, masked, (unsigned int)(count / 4),
+                           over_constants);
+        dst += count;
+        mask += count;
+        n -= count;
+    }
+
+    while (n--)
+    {
+        masked_solid_pixel (dst, solid, *mask++);
+        ++dst;
+    }
+}
+
+void
+ee_mmi_composite_over_n_8_8888 (pixman_implementation_t *imp,
+                                pixman_composite_info_t *info)
+{
+    PIXMAN_COMPOSITE_ARGS (info);
+    uint32_t *dst_line, color;
+    uint8_t *mask_line;
+    int dst_stride, mask_stride, row;
+    uint32_t table[256];
+
+    color = _pixman_image_get_solid (imp, src_image, dest_image->bits.format);
+    if (color == 0)
+        return;
+
+    /* A one-off small rectangle is cheaper without the 256-value LUT. */
+    if (width >= 32)
+    {
+        unsigned int m;
+        for (m = 0; m != 256; ++m)
+        {
+            uint32_t s = color;
+            if (m != 255)
+                UN8x4_MUL_UN8 (s, m);
+            table[m] = s;
+        }
+    }
+
+    PIXMAN_IMAGE_GET_LINE (dest_image, dest_x, dest_y, uint32_t,
+                           dst_stride, dst_line, 1);
+    PIXMAN_IMAGE_GET_LINE (mask_image, mask_x, mask_y, uint8_t,
+                           mask_stride, mask_line, 1);
+
+    for (row = 0; row < height; ++row)
+    {
+        masked_solid_span (dst_line, mask_line, (size_t)width,
+                           color, width >= 32 ? table : NULL);
+        dst_line += dst_stride;
+        mask_line += mask_stride;
+    }
+}
+
+/*
+ * Premultiplied 8888 OVER into 565. For groups of eight pixels we
+ * unpack RGB565 into two aligned 32-bit quads, use the existing OVER
+ * MMI kernel on both, then pack the results using the existing 565
+ * conversion kernel. This intentionally reuses the bit-exact kernels.
+ */
+static force_inline void
+over_565_pixel (uint16_t *dst, uint32_t s)
+{
+    uint32_t d, a;
+
+    if (!s)
+        return;
+
+    if ((s >> 24) == 255)
+    {
+        *dst = convert_8888_to_0565 (s);
+        return;
+    }
+
+    d = convert_0565_to_0888 (*dst);
+    a = (~s) >> 24;
+    UN8x4_MUL_UN8_ADD_UN8x4 (d, a, s);
+    *dst = convert_8888_to_0565 (d);
+}
+
+static void
+over_565_span (uint16_t *dst, const uint32_t *src, size_t n)
+{
+    uint32_t dst_quads[8] __attribute__((aligned(16)));
+    uint32_t src_quads[8] __attribute__((aligned(16)));
+    unsigned int i;
+
+    if (n < 32 || spans_overlap (src, n * 4, dst, n * 2))
+    {
+        while (n--)
+            over_565_pixel (dst++, *src++);
+        return;
+    }
+
+    /* Destination needs aligned SQ, source is copied to aligned
+     * scratch so an unaligned texture can still use the MMI core. */
+    while (n && ((uintptr_t)dst & 15))
+    {
+        over_565_pixel (dst++, *src++);
+        --n;
+    }
+
+    while (n >= 8)
+    {
+        for (i = 0; i < 8; ++i)
+        {
+            dst_quads[i] = convert_0565_to_0888 (dst[i]);
+            src_quads[i] = src[i];
+        }
+
+        ee_mmi_over_quads (dst_quads, src_quads, 2, over_constants);
+        ee_mmi_8888_to_0565_quads (dst, dst_quads, 1, convert_masks);
+        dst += 8;
+        src += 8;
+        n -= 8;
+    }
+
+    while (n--)
+        over_565_pixel (dst++, *src++);
+}
+
+void
+ee_mmi_composite_over_8888_0565 (pixman_implementation_t *imp,
+                                 pixman_composite_info_t *info)
+{
+    PIXMAN_COMPOSITE_ARGS (info);
+    uint32_t *src_line;
+    uint16_t *dst_line;
+    int src_stride, dst_stride;
+
+    PIXMAN_IMAGE_GET_LINE (src_image, src_x, src_y, uint32_t,
+                           src_stride, src_line, 1);
+    PIXMAN_IMAGE_GET_LINE (dest_image, dest_x, dest_y, uint16_t,
+                           dst_stride, dst_line, 1);
+
+    while (height-- > 0)
+    {
+        over_565_span (dst_line, src_line, (size_t)width);
+        src_line += src_stride;
+        dst_line += dst_stride;
+    }
+}

@@ -210,47 +210,95 @@ ee_mmi_fill (pixman_implementation_t *imp,
              uint32_t *bits, int stride, int bpp,
              int x, int y, int width, int height, uint32_t filler)
 {
-    uint32_t pattern[4] __attribute__((aligned(16))) =
-        { filler, filler, filler, filler };
-    int row;
+    uint32_t pattern[4] __attribute__((aligned(16)));
+    int row, i;
 
-    if (bpp != 32 || width <= 0 || height <= 0)
+    if ((bpp != 16 && bpp != 32) || width <= 0 || height <= 0)
         return FALSE;
 
-    for (row = 0; row < height; ++row)
+    /* pixman_fill() passes the 16-bit color in filler's lower halfword.
+     * Replicate it eight times for one aligned 128-bit SQ.
+     */
+    if (bpp == 16)
     {
-        uint32_t *dst = bits + (ptrdiff_t)(y + row) * stride + x;
-        int remaining = width;
+        uint32_t p = (uint16_t)filler;
+        p |= p << 16;
+        for (i = 0; i < 4; ++i)
+            pattern[i] = p;
 
-        while (remaining && ((uintptr_t)dst & 15))
+        for (row = 0; row < height; ++row)
         {
-            *dst++ = filler;
-            --remaining;
-        }
+            uint16_t *dst = (uint16_t *)(bits +
+                                        (ptrdiff_t)(y + row) * stride) + x;
+            int remaining = width;
 
-        if (remaining >= 16)
+            while (remaining && ((uintptr_t)dst & 15))
+            {
+                *dst++ = (uint16_t)filler;
+                --remaining;
+            }
+
+            if (remaining >= 32)
+            {
+                unsigned int quads = (unsigned int)remaining / 8;
+                ee_mmi_fill_quads ((uint8_t *)dst, pattern, quads);
+                dst += (size_t)quads * 8;
+                remaining -= (int)(quads * 8);
+            }
+
+            while (remaining--)
+                *dst++ = (uint16_t)filler;
+        }
+    }
+    else
+    {
+        for (i = 0; i < 4; ++i)
+            pattern[i] = filler;
+
+        for (row = 0; row < height; ++row)
         {
-            unsigned int quads = (unsigned int)remaining / 4;
-            ee_mmi_fill_quads ((uint8_t *)dst, pattern, quads);
-            dst += (size_t)quads * 4;
-            remaining -= (int)(quads * 4);
-        }
+            uint32_t *dst = bits + (ptrdiff_t)(y + row) * stride + x;
+            int remaining = width;
 
-        while (remaining--)
-            *dst++ = filler;
+            while (remaining && ((uintptr_t)dst & 15))
+            {
+                *dst++ = filler;
+                --remaining;
+            }
+
+            if (remaining >= 16)
+            {
+                unsigned int quads = (unsigned int)remaining / 4;
+                ee_mmi_fill_quads ((uint8_t *)dst, pattern, quads);
+                dst += (size_t)quads * 4;
+                remaining -= (int)(quads * 4);
+            }
+
+            while (remaining--)
+                *dst++ = filler;
+        }
     }
 
     return TRUE;
 }
 
-/* Additional EE MMI composite entry points (separate translation unit). */
-extern void ee_mmi_composite_over_8888 (pixman_implementation_t *,
-                                         pixman_composite_info_t *);
-extern void ee_mmi_composite_src_8888_0565 (pixman_implementation_t *,
-                                             pixman_composite_info_t *);
-
 static const pixman_fast_path_t ee_mmi_fast_paths[] =
 {
+    /* Solid-color glyph/text drawing with an A8 coverage mask. */
+    PIXMAN_STD_FAST_PATH (OVER, solid, a8, a8r8g8b8,
+                          ee_mmi_composite_over_n_8_8888),
+    PIXMAN_STD_FAST_PATH (OVER, solid, a8, x8r8g8b8,
+                          ee_mmi_composite_over_n_8_8888),
+    PIXMAN_STD_FAST_PATH (OVER, solid, a8, a8b8g8r8,
+                          ee_mmi_composite_over_n_8_8888),
+    PIXMAN_STD_FAST_PATH (OVER, solid, a8, x8b8g8r8,
+                          ee_mmi_composite_over_n_8_8888),
+
+    /* Premultiplied 8888 OVER onto 16-bit RGB565 or BGR565. */
+    PIXMAN_STD_FAST_PATH (OVER, a8r8g8b8, null, r5g6b5,
+                          ee_mmi_composite_over_8888_0565),
+    PIXMAN_STD_FAST_PATH (OVER, a8b8g8r8, null, b5g6r5,
+                          ee_mmi_composite_over_8888_0565),
     PIXMAN_STD_FAST_PATH (OVER, a8r8g8b8, null, a8r8g8b8,
                           ee_mmi_composite_over_8888),
     PIXMAN_STD_FAST_PATH (OVER, a8r8g8b8, null, x8r8g8b8,

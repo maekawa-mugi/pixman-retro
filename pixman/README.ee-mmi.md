@@ -27,16 +27,25 @@ also removes the backend.
   and A8 to A8.
 * `SRC`: 32-bit same-format copies for ARGB8888, ABGR8888,
   XRGB8888, and XBGR8888.
-* 32bpp solid fills through Pixman's `fill` implementation hook.
+* 16bpp RGB565/BGR565 and 32bpp solid fills through Pixman's `fill`
+  implementation hook (16-bit patterns are replicated eight times).
 * Premultiplied-alpha `OVER` for ARGB8888 / ABGR8888 to matching 32-bit
   destinations (including the XRGB8888/XBGR8888 destination variants).
+* `OVER` for solid + A8 coverage mask -> ARGB8888 / XRGB8888 /
+  ABGR8888 / XBGR8888, with a one-kilobyte mask lookup table and
+  batched MMI OVER; short spans stay scalar.
+* Unmasked `OVER` from ARGB8888 into RGB565 and from ABGR8888 into
+  BGR565, using an aligned eight-pixel scratch block to reuse the
+  existing MMI OVER and RGB565 packing kernels.
 * `SRC` from ARGB8888 / XRGB8888 to RGB565, and from ABGR8888 /
   XBGR8888 to BGR565.
 
 All other operations continue through the normal Pixman fallback chain.
-Masked `OVER`, component-alpha, bilinear scaling, and RGB565 `OVER`
-are **not** accelerated. Only unmasked 32-bit `OVER` and the `SRC`
-conversion combinations above have MMI paths.
+Other masked `OVER` variants, component-alpha, and bilinear/nearest
+scaling are **not** accelerated. The RGB565 OVER implementation performs
+scalar RGB565 expansion followed by two MMI OVER blocks and an MMI
+conversion block; its performance is workload-dependent and may not
+beat Pixman's original scalar routine.
 
 ## Alignment and correctness
 
@@ -68,6 +77,13 @@ Recommended checks:
 * OVER with alpha 0, 1, 127, 254 and 255 and mixed transparency.
 * RGB565 conversion with source and destination independently offset by
   0 through 15 bytes; confirm color channel order against the C fast path.
+* Solid+A8 mask with all coverage values 0..255, transparent and opaque
+  solid sources, mask/destination aliasing, very small widths, and negative
+  strides.
+* RGB565 OVER with mixed-alpha premultiplied input, source/destination
+  aliasing, short spans, and destination alignment offsets 0..14 by 2.
+* 16-bit fill for every possible x alignment, odd widths, and negative
+  strides.
 * Src/Dst alignment offsets 0..15, odd and negative strides, clipped regions.
 * Both identical pointers and partially overlapping buffers.
 * Sizes and memory layouts representative of the actual application.
