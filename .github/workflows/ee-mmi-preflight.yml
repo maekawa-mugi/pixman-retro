@@ -1,0 +1,26 @@
+name: EE MMI test suite host preflight
+
+on:
+  push:
+    branches:
+      - 'feat/ps2-ee-mmi-*'
+    paths:
+      - 'pixman/**'
+      - 'test/**'
+      - '.github/workflows/ee-mmi-preflight.yml'
+  pull_request:
+    paths:
+      - 'pixman/**'
+      - 'test/**'
+      - '.github/workflows/ee-mmi-preflight.yml'
+
+jobs:
+  host-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run all EE MMI differential tests against portable C backend
+        run: make -f test/Makefile.ee-mmi host-check
+      - name: Exercise benchmark output format without EE assembly
+        run: ./ee-mmi-host-suite --bench-only

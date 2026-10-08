@@ -53,3 +53,16 @@ beyond direct assembly entry points.
 The fused image+A8 case is compiled as a fourth independent differential
 test inside the same one-shot suite. It targets the actual o32 fifth
 argument and all 256 coverage values.
+
+## Native preflight (no PS2 needed)
+
+`make -f test/Makefile.ee-mmi host-check` compiles every current suite
+test against a scalar reference backend and executes all differential
+test binaries in one host executable. This catches C syntax, linking,
+test-output, and test harness regressions before transferring to PS2.
+It does **not** assemble EE instructions, validate MMI hardware results,
+confirm the o32 fifth-argument location, or establish speedups.
+
+A dedicated GitHub Actions workflow performs the same host preflight
+for branch pushes. The EE cross-compile and actual one-shot target run
+remain mandatory before deploying MMI changes.

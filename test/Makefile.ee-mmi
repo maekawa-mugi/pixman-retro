@@ -36,3 +36,35 @@ $(OUT): $(OBJS) $(ASM)
 	$(EE_CC) $(EE_CFLAGS) $(EE_ASFLAGS) $(EE_LDFLAGS) -o $@ $(OBJS) $(ASM)
 clean:
 	rm -rf $(BUILD) $(OUT)
+
+# Native C reference build checks test harnesses without an EE assembler.
+# This is NOT an EE code correctness/ABI/clock validation.
+HOST_CC ?= cc
+HOST_CFLAGS ?= -O2 -Wall -Wextra -std=c99
+HOST_OUT ?= ee-mmi-host-suite
+HOST_BUILD ?= .ee-mmi-host-build
+HOST_OBJS = $(HOST_BUILD)/suite.o $(HOST_BUILD)/bench.o \
+            $(HOST_BUILD)/ca.o $(HOST_BUILD)/a8.o \
+            $(HOST_BUILD)/rgb565.o $(HOST_BUILD)/image_a8.o \
+            $(HOST_BUILD)/reference.o
+.PHONY: host-check
+host-check: $(HOST_OUT)
+	./$(HOST_OUT) --test-only
+$(HOST_BUILD):
+	mkdir -p $(HOST_BUILD)
+$(HOST_BUILD)/suite.o: test/ee-mmi-suite.c | $(HOST_BUILD)
+	$(HOST_CC) $(HOST_CFLAGS) -c $< -o $@
+$(HOST_BUILD)/bench.o: test/ee-mmi-bench.c | $(HOST_BUILD)
+	$(HOST_CC) $(HOST_CFLAGS) -c $< -o $@
+$(HOST_BUILD)/ca.o: test/ee-mmi-ca-fused-test.c | $(HOST_BUILD)
+	$(HOST_CC) $(HOST_CFLAGS) -Dmain=ee_test_ca -c $< -o $@
+$(HOST_BUILD)/a8.o: test/ee-mmi-a8-fused-test.c | $(HOST_BUILD)
+	$(HOST_CC) $(HOST_CFLAGS) -Dmain=ee_test_solid_a8 -c $< -o $@
+$(HOST_BUILD)/rgb565.o: test/ee-mmi-565-fused-test.c | $(HOST_BUILD)
+	$(HOST_CC) $(HOST_CFLAGS) -Dmain=ee_test_565 -c $< -o $@
+$(HOST_BUILD)/image_a8.o: test/ee-mmi-image-a8-fused-test.c | $(HOST_BUILD)
+	$(HOST_CC) $(HOST_CFLAGS) -Dmain=ee_test_image_a8 -c $< -o $@
+$(HOST_BUILD)/reference.o: test/ee-mmi-host-reference.c | $(HOST_BUILD)
+	$(HOST_CC) $(HOST_CFLAGS) -c $< -o $@
+$(HOST_OUT): $(HOST_OBJS)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $(HOST_OBJS)
