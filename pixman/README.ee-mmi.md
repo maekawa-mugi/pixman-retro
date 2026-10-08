@@ -48,9 +48,11 @@ also removes the backend.
 * 8bpp A8, 16bpp RGB565/BGR565, and 32bpp solid fills through Pixman's
   `fill` implementation hook (16-bit patterns are replicated eight times).
 * Component-alpha `OVER` for solid + 32bit ARGB/ABGR CA mask ->
-  ARGB/XRGB/ABGR/XBGR8888. Preprocess exact channel-wise Pixman
-  multiplication in C, then use a dedicated EE MMI PMULTH/PADDUB
-  destination blend kernel for batches of four pixels.
+  ARGB/XRGB/ABGR/XBGR8888. A fused four-pixel EE MMI path performs mask
+  scaling, inverse alpha, and saturating destination composition without
+  intermediate buffers when the mask and destination have compatible
+  alignment. The previous staged MMI path handles incompatible alignment;
+  overlapping data continues to use scalar forward traversal.
 * Premultiplied-alpha `OVER` for ARGB8888 / ABGR8888 to matching 32-bit
   destinations (including the XRGB8888/XBGR8888 destination variants).
 * `OVER` for solid + A8 coverage mask -> ARGB8888 / XRGB8888 /
@@ -141,3 +143,13 @@ Recommended checks:
 For performance, measure separate small/large rectangles and cache-warm/cold
 cases. The transfer paths are likely to be limited by EE memory bandwidth,
 so wins over the C or libc paths are not guaranteed.
+
+## Fused component-alpha regression test
+
+Use `test/ee-mmi-ca-fused-test.c` to check the actual fused EE assembly
+against independent scalar output, including all-zero/opaque and random
+mask channels, randomized destination values, block counts 0..32, and
+write canaries. Compile with the EE toolchain together with
+`pixman/pixman-ee-mmi-ca-asm.S`. The original Pixman composite tests
+must also cover unaligned and overlapping masks/destinations.
+Performance on PS2 hardware and PCSX2 has not yet been measured.

@@ -25,11 +25,14 @@
 #include "pixman-private.h"
 #include "pixman-combine32.h"
 
-/* Each 32-byte prepared quad contains 4 premultiplied source words and
- * 4 words holding the inverse per-channel destination multiplier. */
+/* Staged fallback retains independent src/dst alignment support.
+ * The fused path operates on aligned, nonoverlapping CA masks and dst. */
 extern void ee_mmi_ca_over_quads (uint32_t *dst, const uint32_t *prepared,
                                    unsigned int blocks,
                                    const uint16_t *rounding);
+extern void ee_mmi_ca_over_solid_quads (uint32_t *dst, const uint32_t *mask,
+                                        unsigned int blocks,
+                                        const uint32_t *constants);
 
 static const uint16_t rounding_128[8] __attribute__((aligned(16))) =
 {
@@ -78,8 +81,8 @@ overlap_32 (const uint32_t *x, const uint32_t *y, size_t n)
 }
 
 static void
-ca_over_span (uint32_t *dst, const uint32_t *mask, size_t n,
-              uint32_t color)
+ca_over_span_staged (uint32_t *dst, const uint32_t *mask, size_t n,
+                     uint32_t color)
 {
     uint32_t prepared[128] __attribute__((aligned(16)));
     unsigned int src_alpha = color >> 24;
@@ -135,6 +138,50 @@ ca_over_span (uint32_t *dst, const uint32_t *mask, size_t n,
         ca_over_scalar (dst++, color, *mask++);
 }
 
+/* Direct SIMD for congruently aligned buffers; preserve the staged MMI
+ * implementation for incompatible alignments and scalar traversal when
+ * destination/mask overlap.
+ */
+static void
+ca_over_span (uint32_t *dst, const uint32_t *mask, size_t n,
+              uint32_t color, const uint32_t *constants)
+{
+    size_t prefix, blocks;
+
+    if (n < 16 || overlap_32 (dst, mask, n))
+    {
+        while (n--)
+            ca_over_scalar (dst++, color, *mask++);
+        return;
+    }
+
+    if (((uintptr_t)dst ^ (uintptr_t)mask) & 15)
+    {
+        ca_over_span_staged (dst, mask, n, color);
+        return;
+    }
+
+    prefix = (16 - ((uintptr_t)dst & 15)) & 15;
+    while (prefix != 0)
+    {
+        ca_over_scalar (dst++, color, *mask++);
+        --prefix;
+        --n;
+    }
+
+    blocks = n / 4;
+    if (blocks)
+    {
+        ee_mmi_ca_over_solid_quads (dst, mask, (unsigned int)blocks, constants);
+        dst += blocks * 4;
+        mask += blocks * 4;
+        n -= blocks * 4;
+    }
+
+    while (n--)
+        ca_over_scalar (dst++, color, *mask++);
+}
+
 void
 ee_mmi_composite_over_solid_8888_ca (pixman_implementation_t *imp,
                                       pixman_composite_info_t *info)
@@ -143,10 +190,22 @@ ee_mmi_composite_over_solid_8888_ca (pixman_implementation_t *imp,
     uint32_t solid = _pixman_image_get_solid (imp, src_image,
                                               dest_image->bits.format);
     uint32_t *mask_line, *dst_line;
-    int mask_stride, dst_stride;
+    uint32_t constants[16] __attribute__((aligned(16)));
+    uint32_t alpha_word;
+    int mask_stride, dst_stride, i;
 
     if (!solid)
         return;
+
+    alpha_word = solid >> 24;
+    alpha_word |= alpha_word << 16;
+    for (i = 0; i < 4; ++i)
+    {
+        constants[i] = solid;
+        constants[i + 4] = 0x00800080;
+        constants[i + 8] = alpha_word;
+        constants[i + 12] = 0x00ff00ff;
+    }
 
     PIXMAN_IMAGE_GET_LINE (mask_image, mask_x, mask_y, uint32_t,
                            mask_stride, mask_line, 1);
@@ -155,7 +214,7 @@ ee_mmi_composite_over_solid_8888_ca (pixman_implementation_t *imp,
 
     while (height-- > 0)
     {
-        ca_over_span (dst_line, mask_line, (size_t)width, solid);
+        ca_over_span (dst_line, mask_line, (size_t)width, solid, constants);
         mask_line += mask_stride;
         dst_line += dst_stride;
     }
