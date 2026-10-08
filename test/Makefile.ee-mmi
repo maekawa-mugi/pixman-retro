@@ -1,0 +1,35 @@
+# Build one unified test+benchmark executable for PS2 Linux (o32).
+# Run from the repository root: make -f test/Makefile.ee-mmi EE_CC=...
+EE_CC ?= mipsel-linux-gnu-gcc
+EE_CFLAGS ?= -O2 -Wall
+EE_ASFLAGS ?=
+EE_LDFLAGS ?=
+BUILD ?= .ee-mmi-build
+OUT ?= ee-mmi-suite
+
+ASM = pixman/pixman-ee-mmi-asm.S \
+      pixman/pixman-ee-mmi-over-asm.S \
+      pixman/pixman-ee-mmi-ca-asm.S \
+      pixman/pixman-ee-mmi-a8-asm.S \
+      pixman/pixman-ee-mmi-565-asm.S
+OBJS = $(BUILD)/suite.o $(BUILD)/bench.o \
+       $(BUILD)/ca.o $(BUILD)/a8.o $(BUILD)/rgb565.o
+
+.PHONY: all clean
+all: $(OUT)
+$(BUILD):
+	mkdir -p $(BUILD)
+$(BUILD)/suite.o: test/ee-mmi-suite.c | $(BUILD)
+	$(EE_CC) $(EE_CFLAGS) -c $< -o $@
+$(BUILD)/bench.o: test/ee-mmi-bench.c | $(BUILD)
+	$(EE_CC) $(EE_CFLAGS) -c $< -o $@
+$(BUILD)/ca.o: test/ee-mmi-ca-fused-test.c | $(BUILD)
+	$(EE_CC) $(EE_CFLAGS) -Dmain=ee_test_ca -c $< -o $@
+$(BUILD)/a8.o: test/ee-mmi-a8-fused-test.c | $(BUILD)
+	$(EE_CC) $(EE_CFLAGS) -Dmain=ee_test_solid_a8 -c $< -o $@
+$(BUILD)/rgb565.o: test/ee-mmi-565-fused-test.c | $(BUILD)
+	$(EE_CC) $(EE_CFLAGS) -Dmain=ee_test_565 -c $< -o $@
+$(OUT): $(OBJS) $(ASM)
+	$(EE_CC) $(EE_CFLAGS) $(EE_ASFLAGS) $(EE_LDFLAGS) -o $@ $(OBJS) $(ASM)
+clean:
+	rm -rf $(BUILD) $(OUT)
