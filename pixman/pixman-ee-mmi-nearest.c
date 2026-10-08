@@ -104,6 +104,12 @@ ee_mmi_composite_nearest_over_8888 (pixman_implementation_t *imp,
               src_image->bits.format == PIXMAN_x8b8g8r8);
     alias = (src_image->bits.bits == dest_image->bits.bits);
 
+    /* An empty source contributes transparent black for OVER. Avoid
+     * invoking the NORMAL/PAD repeat helpers with a zero-sized image.
+     */
+    if (src_width <= 0 || src_height <= 0)
+        return;
+
     vy = v.vector[1];
     while (height-- > 0)
     {
