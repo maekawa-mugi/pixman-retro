@@ -10,9 +10,39 @@
     .globl  ee_mmi_add_quads
     .ent    ee_mmi_add_quads
 ee_mmi_add_quads:
-    beqz    $a2, 2f
+    beqz    $a2, 4f
+     nop
+    sltiu   $t2, $a2, 4
+    bnez    $t2, 2f
      nop
 1:
+    /* Four independent aligned 16-byte blocks per iteration. */
+    lq      $t0, 0($a0)
+    lq      $t1, 0($a1)
+    lq      $t3, 16($a0)
+    lq      $t4, 16($a1)
+    paddub  $t0, $t0, $t1
+    lq      $t5, 32($a0)
+    lq      $t6, 32($a1)
+    paddub  $t3, $t3, $t4
+    lq      $t7, 48($a0)
+    lq      $t8, 48($a1)
+    paddub  $t5, $t5, $t6
+    sq      $t0, 0($a0)
+    paddub  $t7, $t7, $t8
+    sq      $t3, 16($a0)
+    sq      $t5, 32($a0)
+    sq      $t7, 48($a0)
+    addiu   $a0, $a0, 64
+    addiu   $a1, $a1, 64
+    addiu   $a2, $a2, -4
+    sltiu   $t2, $a2, 4
+    beqz    $t2, 1b
+     nop
+2:
+    beqz    $a2, 4f
+     nop
+3:
     lq      $t0, 0($a0)
     lq      $t1, 0($a1)
     paddub  $t0, $t0, $t1
@@ -20,9 +50,9 @@ ee_mmi_add_quads:
     addiu   $a0, $a0, 16
     addiu   $a1, $a1, 16
     addiu   $a2, $a2, -1
-    bnez    $a2, 1b
+    bnez    $a2, 3b
      nop
-2:
+4:
     jr      $ra
      nop
     .end    ee_mmi_add_quads
@@ -31,17 +61,39 @@ ee_mmi_add_quads:
     .globl  ee_mmi_copy_quads
     .ent    ee_mmi_copy_quads
 ee_mmi_copy_quads:
-    beqz    $a2, 2f
+    beqz    $a2, 4f
+     nop
+    sltiu   $t2, $a2, 4
+    bnez    $t2, 2f
      nop
 1:
+    /* The C caller guarantees nonoverlapping, aligned spans. */
+    lq      $t0, 0($a1)
+    lq      $t1, 16($a1)
+    lq      $t3, 32($a1)
+    lq      $t4, 48($a1)
+    sq      $t0, 0($a0)
+    sq      $t1, 16($a0)
+    sq      $t3, 32($a0)
+    sq      $t4, 48($a0)
+    addiu   $a0, $a0, 64
+    addiu   $a1, $a1, 64
+    addiu   $a2, $a2, -4
+    sltiu   $t2, $a2, 4
+    beqz    $t2, 1b
+     nop
+2:
+    beqz    $a2, 4f
+     nop
+3:
     lq      $t0, 0($a1)
     sq      $t0, 0($a0)
     addiu   $a0, $a0, 16
     addiu   $a1, $a1, 16
     addiu   $a2, $a2, -1
-    bnez    $a2, 1b
+    bnez    $a2, 3b
      nop
-2:
+4:
     jr      $ra
      nop
     .end    ee_mmi_copy_quads
@@ -50,16 +102,32 @@ ee_mmi_copy_quads:
     .globl  ee_mmi_fill_quads
     .ent    ee_mmi_fill_quads
 ee_mmi_fill_quads:
-    beqz    $a2, 2f
+    beqz    $a2, 4f
      nop
     lq      $t0, 0($a1)
+    sltiu   $t1, $a2, 4
+    bnez    $t1, 2f
+     nop
 1:
+    sq      $t0, 0($a0)
+    sq      $t0, 16($a0)
+    sq      $t0, 32($a0)
+    sq      $t0, 48($a0)
+    addiu   $a0, $a0, 64
+    addiu   $a2, $a2, -4
+    sltiu   $t1, $a2, 4
+    beqz    $t1, 1b
+     nop
+2:
+    beqz    $a2, 4f
+     nop
+3:
     sq      $t0, 0($a0)
     addiu   $a0, $a0, 16
     addiu   $a2, $a2, -1
-    bnez    $a2, 1b
+    bnez    $a2, 3b
      nop
-2:
+4:
     jr      $ra
      nop
     .end    ee_mmi_fill_quads
