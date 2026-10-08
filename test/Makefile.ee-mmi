@@ -13,7 +13,8 @@ ASM = pixman/pixman-ee-mmi-asm.S \
       pixman/pixman-ee-mmi-a8-asm.S \
       pixman/pixman-ee-mmi-image-a8-asm.S \
       pixman/pixman-ee-mmi-image-ca-asm.S \
-      pixman/pixman-ee-mmi-565-asm.S
+      pixman/pixman-ee-mmi-565-asm.S \
+      pixman/pixman-ee-mmi-scale-asm.S
 OBJS = $(BUILD)/suite.o $(BUILD)/bench.o \
        $(BUILD)/ca.o $(BUILD)/a8.o $(BUILD)/rgb565.o $(BUILD)/image_a8.o $(BUILD)/image_ca.o
 

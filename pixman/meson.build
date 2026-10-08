@@ -64,7 +64,7 @@ simds = [
     'pixman-ee-mmi-ca.c',
     'pixman-ee-mmi-ca-asm.S', 'pixman-ee-mmi-image-ca-asm.S',
     'pixman-ee-mmi-565-asm.S',
-    'pixman-ee-mmi-nearest.c',
+    'pixman-ee-mmi-scale-asm.S', 'pixman-ee-mmi-nearest.c',
     'pixman-ee-mmi-bilinear.c']],
   ['mips-dspr2', have_mips_dspr2, mips_dspr2_flags,
    ['pixman-mips-dspr2-asm.S', 'pixman-mips-memcpy-asm.S']],
