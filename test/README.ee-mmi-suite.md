@@ -84,3 +84,30 @@ the benchmark speed.
 The microbench suite and Pixman API bench are complementary. Only
 target hardware can establish speedups and the two processes must be
 run under the same load and cache policy.
+
+## Single transfer, single run
+
+After cross-building `ee-mmi-suite` and the Meson Pixman test binaries
+with the same EE Linux compiler and ABI:
+
+```sh
+sh test/package-ee-mmi.sh build-ee/test ee-mmi-test-kit.tar.gz
+```
+
+Copy only the generated archive to PS2 Linux, unpack it, and follow
+`README-RUN.txt`. Retrieve `ee-mmi-results.log` once. The runner
+collects failures without stopping and compares all 42 Pixman API
+benchmark checksums across MMI-enabled and generic-C runs, reporting
+`EE_PIXEL_MISMATCH` on differences. The log includes platform info,
+all unit-test failures, all microbench CSV lines and all Pixman API
+bench CSV lines.
+
+The archive does **not** include transitive shared libraries. If
+Pixman was built dynamically, make sure the matching libpixman is
+installed or package it separately; a single archive does not itself
+guarantee that the binaries are self-contained.
+
+The GitHub Actions host preflight can fail for runner provisioning or
+other platform reasons; without job logs and completed build steps
+it must not be interpreted as evidence that the EE code compiled or
+failed. Run `host-check` locally before archiving.
