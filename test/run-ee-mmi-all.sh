@@ -29,6 +29,17 @@ if [ -n "$TEST_DIR" ]; then
             FAIL=$((FAIL + 1))
         fi
     done
+    if [ -x "$TEST_DIR/ee-mmi-pixman-bench" ]; then
+        echo "EE_BENCH_NOTE,Compare PIXMAN_BENCH checksums for EE and C runs."
+        run_it "pixman-bench:EE" "$TEST_DIR/ee-mmi-pixman-bench"
+        PIXMAN_DISABLE=ee-mmi
+        export PIXMAN_DISABLE
+        run_it "pixman-bench:C" "$TEST_DIR/ee-mmi-pixman-bench"
+        unset PIXMAN_DISABLE
+    else
+        echo "EE_TEST_MISSING,ee-mmi-pixman-bench"
+        FAIL=$((FAIL + 1))
+    fi
 fi
 echo "EE_ALL_RESULT,failures=$FAIL"
 if [ "$FAIL" -ne 0 ]; then exit 1; fi

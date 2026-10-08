@@ -90,3 +90,10 @@ foreach p : progs
   )
 endforeach
 
+
+# API-level benchmark for R5900 EE MMI dispatch and fused-mask fast paths.
+if have_ee_mmi
+  executable('ee-mmi-pixman-bench',
+    'ee-mmi-pixman-bench.c',
+    dependencies : [idep_pixman])
+endif

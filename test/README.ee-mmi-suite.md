@@ -66,3 +66,21 @@ confirm the o32 fifth-argument location, or establish speedups.
 A dedicated GitHub Actions workflow performs the same host preflight
 for branch pushes. The EE cross-compile and actual one-shot target run
 remain mandatory before deploying MMI changes.
+
+## Pixman API dispatch benchmark
+
+When `-Dee-mmi=enabled`, Meson also builds the
+`ee-mmi-pixman-bench` executable in `test/`. Include that binary in the
+directory passed as the second argument to `run-ee-mmi-all.sh`.
+The runner executes it twice, once with EE MMI enabled and once with
+`PIXMAN_DISABLE=ee-mmi`. The `PIXMAN_BENCH` CSV lines cover 14 Pixman
+API workloads, including masked OVER, component-alpha, RGB565, nearest
+and bilinear scaling, ADD, SRC, IN, BLT and fill, at 16x2, 64x16,
+and 256x64. Compare the checksum field between enabled/disabled modes
+for each workload/size before comparing timings. Different checksums
+are a correctness failure and must be investigated, independent of
+the benchmark speed.
+
+The microbench suite and Pixman API bench are complementary. Only
+target hardware can establish speedups and the two processes must be
+run under the same load and cache policy.
