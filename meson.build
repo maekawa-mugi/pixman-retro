@@ -450,10 +450,10 @@ if not use_ee_mmi.disabled()
         void ee_mmi_probe (void)
         {
             __asm__ __volatile__ (
-                "lq $8, 0($sp)\\n\\t"
-                "lq $9, 0($sp)\\n\\t"
-                "paddub $8, $8, $9\\n\\t"
-                "sq $8, 0($sp)\\n\\t"
+                "lq $8, 0($sp)\n\t"
+                "lq $9, 0($sp)\n\t"
+                "paddub $8, $8, $9\n\t"
+                "sq $8, 0($sp)\n\t"
                 :
                 :
                 : "$8", "$9", "memory");
