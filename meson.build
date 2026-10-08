@@ -456,12 +456,15 @@ if not use_ee_mmi.disabled()
                 "pextlw $10, $8, $9\n\t"
                 "pmulth $10, $8, $9\n\t"
                 "pmfhl.lh $10\n\t"
+                "padduh $10, $8, $9\n\t"
+                "pextlb $10, $8, $9\n\t"
+                "pextub $10, $8, $9\n\t"
                 "ppacb $10, $8, $9\n\t"
                 "ppach $10, $8, $9\n\t"
                 "sq $8, 0($sp)\n\t"
                 :
                 :
-                : "$8", "$9", "memory");
+                : "$8", "$9", "$10", "memory");
         }
       ''', name : 'PlayStation 2 EE MMI instruction support')
       have_ee_mmi = true

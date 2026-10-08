@@ -25,10 +25,16 @@ also removes the backend.
 
 * Saturating `ADD`: ARGB8888 to ARGB8888, ABGR8888 to ABGR8888,
   and A8 to A8.
+* Unmasked same-format `SRC` copying of A8 and RGB565/BGR565,
+  in addition to the existing 32-bit formats.
 * `SRC`: 32-bit same-format copies for ARGB8888, ABGR8888,
   XRGB8888, and XBGR8888.
-* 16bpp RGB565/BGR565 and 32bpp solid fills through Pixman's `fill`
-  implementation hook (16-bit patterns are replicated eight times).
+* 8bpp A8, 16bpp RGB565/BGR565, and 32bpp solid fills through Pixman's
+  `fill` implementation hook (16-bit patterns are replicated eight times).
+* Component-alpha `OVER` for solid + 32bit ARGB/ABGR CA mask ->
+  ARGB/XRGB/ABGR/XBGR8888. Preprocess exact channel-wise Pixman
+  multiplication in C, then use a dedicated EE MMI PMULTH/PADDUB
+  destination blend kernel for batches of four pixels.
 * Premultiplied-alpha `OVER` for ARGB8888 / ABGR8888 to matching 32-bit
   destinations (including the XRGB8888/XBGR8888 destination variants).
 * `OVER` for solid + A8 coverage mask -> ARGB8888 / XRGB8888 /
@@ -47,7 +53,7 @@ also removes the backend.
   XBGR8888 to BGR565.
 
 All other operations continue through the normal Pixman fallback chain.
-Unsupported A8-mask format combinations, component-alpha, and
+Unsupported mask formats, non-solid-source component-alpha, and
 bilinear/nearest scaling are **not** accelerated. The RGB565 OVER implementation performs
 scalar RGB565 expansion followed by two MMI OVER blocks and an MMI
 conversion block; its performance is workload-dependent and may not
@@ -93,8 +99,11 @@ Recommended checks:
   short and long rectangles, and both opaque and translucent colors.
 * RGB565 OVER with mixed-alpha premultiplied input, source/destination
   aliasing, short spans, and destination alignment offsets 0..14 by 2.
-* 16-bit fill for every possible x alignment, odd widths, and negative
-  strides.
+* 8- and 16-bit fill for every possible x alignment, odd widths, and
+  negative strides.
+* Component-alpha solid OVER: each of the 4 mask channels at boundaries,
+  opaque source, zero/full masks, partial mask alpha, negative strides,
+  row alignment, and overlapping mask/destination image buffers.
 * Src/Dst alignment offsets 0..15, odd and negative strides, clipped regions.
 * Both identical pointers and partially overlapping buffers.
 * Sizes and memory layouts representative of the actual application.
