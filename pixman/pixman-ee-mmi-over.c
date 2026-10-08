@@ -281,13 +281,19 @@ ee_mmi_composite_over_n_8_8888 (pixman_implementation_t *imp,
     uint8_t *mask_line;
     int dst_stride, mask_stride, row;
     uint32_t table[256];
+    pixman_bool_t use_table;
 
     color = _pixman_image_get_solid (imp, src_image, dest_image->bits.format);
     if (color == 0)
         return;
 
-    /* A one-off small rectangle is cheaper without the 256-value LUT. */
-    if (width >= 32)
+    /* A 256-entry lookup table is wasted setup for tiny rectangles.
+     * Divide instead of multiplying width * height to avoid overflow.
+     * Retain the scalar path for scanlines shorter than 32 pixels.
+     */
+    use_table = width >= 32 && height > 0 &&
+                (width >= 256 || height > 255 / width);
+    if (use_table)
     {
         unsigned int m;
         for (m = 0; m != 256; ++m)
@@ -307,7 +313,7 @@ ee_mmi_composite_over_n_8_8888 (pixman_implementation_t *imp,
     for (row = 0; row < height; ++row)
     {
         masked_solid_span (dst_line, mask_line, (size_t)width,
-                           color, width >= 32 ? table : NULL);
+                           color, use_table ? table : NULL);
         dst_line += dst_stride;
         mask_line += mask_stride;
     }
@@ -559,8 +565,15 @@ ee_mmi_composite_over_solid_8888 (pixman_implementation_t *imp,
         return;
     }
 
-    for (i = 0; i < 64; ++i)
-        staged[i] = solid;
+    /* Fill only the portion that can be read by the MMI batch loop.
+     * For widths below 16 pixels, the scalar path skips staged entirely.
+     */
+    if (width >= 16)
+    {
+        int staged_pixels = width >= 64 ? 64 : (width & ~3);
+        for (i = 0; i < staged_pixels; ++i)
+            staged[i] = solid;
+    }
 
     PIXMAN_IMAGE_GET_LINE (dest_image, dest_x, dest_y, uint32_t,
                            dst_stride, dst_line, 1);
