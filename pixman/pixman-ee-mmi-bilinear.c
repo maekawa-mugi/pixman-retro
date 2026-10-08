@@ -32,6 +32,12 @@
 extern void ee_mmi_over_quads (uint32_t *dst, const uint32_t *src,
                                unsigned int quads, const uint16_t *constants);
 
+extern void ee_mmi_bilinear_lerp_quads (uint32_t *dst,
+                                         const uint32_t *first,
+                                         const uint32_t *second,
+                                         const uint16_t *weights,
+                                         unsigned int blocks);
+
 static const uint16_t bilinear_constants[16] __attribute__((aligned(16))) =
 {
     255, 255, 255, 255, 255, 255, 255, 255,
@@ -78,6 +84,38 @@ bilinear_fetch (const uint32_t *src_base, int stride,
     return bilinear_interpolation (tl, tr, bl, br, distx, disty);
 }
 
+/* Exact 2-tap specialization, used only when one bilinear axis has
+ * zero fractional weight. Pixman's fixed-point weight is 7 bits; double
+ * it to 8 bits, so
+ *
+ *   (a * (256 - 2*w) + b * (2*w)) >> 8
+ *
+ * equals the full Pixman four-tap bilinear_interpolation bit for bit.
+ * The general case still calls Pixman's four-tap scalar interpolation.
+ */
+static force_inline void
+bilinear_fetch_two_taps (const uint32_t *src_base, int stride,
+                         int width, int height, pixman_repeat_t mode,
+                         pixman_fixed_t vx, pixman_fixed_t vy,
+                         pixman_bool_t source_opaque,
+                         pixman_bool_t vertical,
+                         uint32_t *first, uint32_t *second,
+                         unsigned int *second_weight)
+{
+    int x = pixman_fixed_to_int (vx);
+    int y = pixman_fixed_to_int (vy);
+    int dist = vertical ? pixman_fixed_to_bilinear_weight (vy) :
+                          pixman_fixed_to_bilinear_weight (vx);
+    int next_x = vertical ? x : (dist ? x + 1 : x);
+    int next_y = vertical && dist ? y + 1 : y;
+
+    *first = bilinear_sample_one (src_base, stride, width, height, mode,
+                                  x, y, source_opaque);
+    *second = bilinear_sample_one (src_base, stride, width, height, mode,
+                                   next_x, next_y, source_opaque);
+    *second_weight = (unsigned int)dist << 1;
+}
+
 /* The same scalar premultiplied OVER calculation as Pixman's fast path. */
 static force_inline void
 bilinear_over_pixel (uint32_t *dst, uint32_t s)
@@ -105,6 +143,9 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
     pixman_bool_t source_opaque, alias;
     int src_width, src_height;
     uint32_t staged[64] __attribute__((aligned(16)));
+    uint32_t tap_first[16] __attribute__((aligned(16)));
+    uint32_t tap_second[16] __attribute__((aligned(16)));
+    uint16_t tap_weights[128] __attribute__((aligned(16)));
 
     PIXMAN_IMAGE_GET_LINE (src_image, 0, 0, uint32_t,
                            src_stride, src_base, 1);
@@ -140,6 +181,12 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
         size_t n = (size_t)width;
         pixman_fixed_t vx = v.vector[0];
         int i;
+        int disty = pixman_fixed_to_bilinear_weight (vy);
+        pixman_bool_t two_tap_vertical =
+            disty != 0 &&
+            pixman_fixed_to_bilinear_weight (vx) == 0 &&
+            (unit_x & (pixman_fixed_1 - 1)) == 0;
+        pixman_bool_t two_tap = disty == 0 || two_tap_vertical;
 
         dst_line += dst_stride;
 
@@ -170,14 +217,53 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
 
             while (n >= 4)
             {
-                size_t count = n >= 64 ? 64 : (n & ~(size_t)3);
-                for (i = 0; i < (int)count; ++i)
+                size_t count;
+
+                if (two_tap)
                 {
-                    staged[i] = bilinear_fetch (src_base, src_stride,
-                                                src_width, src_height,
-                                                repeat_mode, vx, vy,
-                                                source_opaque);
-                    vx += unit_x;
+                    /* At most four quads: 2 x 64B taps + 256B
+                     * coefficients, fitting in EE's small D-cache.
+                     * The existing MMI OVER stage composes the result.
+                     */
+                    count = n >= 16 ? 16 : (n & ~(size_t)3);
+                    for (i = 0; i < (int)count; ++i)
+                    {
+                        unsigned int w;
+                        size_t index = ((size_t)i / 4) * 32 +
+                                       ((i & 2) ? 8 : 0) +
+                                       ((i & 1) ? 4 : 0);
+                        int j;
+
+                        bilinear_fetch_two_taps (
+                            src_base, src_stride, src_width, src_height,
+                            repeat_mode, vx, vy, source_opaque,
+                            two_tap_vertical,
+                            &tap_first[i], &tap_second[i], &w);
+
+                        for (j = 0; j < 4; ++j)
+                        {
+                            tap_weights[index + j] = (uint16_t)(256 - w);
+                            tap_weights[index + 16 + j] = (uint16_t)w;
+                        }
+                        vx += unit_x;
+                    }
+                    ee_mmi_bilinear_lerp_quads (
+                        staged, tap_first, tap_second, tap_weights,
+                        (unsigned int)(count / 4));
+                }
+                else
+                {
+                    /* Keep the bit-exact generic four-tap interpolation
+                     * for arbitrary 2D scaling and edge/repeat modes.
+                     */
+                    count = n >= 64 ? 64 : (n & ~(size_t)3);
+                    for (i = 0; i < (int)count; ++i)
+                    {
+                        staged[i] = bilinear_fetch (
+                            src_base, src_stride, src_width, src_height,
+                            repeat_mode, vx, vy, source_opaque);
+                        vx += unit_x;
+                    }
                 }
 
                 ee_mmi_over_quads (dst, staged, (unsigned int)(count / 4),
