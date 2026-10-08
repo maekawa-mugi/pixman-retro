@@ -63,7 +63,10 @@ main (void)
     for (iter = 0; iter < 16000; ++iter)
     {
         mask_offset = iter % 16;
-        blocks = (iter / 16) % 33;
+        /* Guarantee every A8 coverage value reaches the MMI kernel.
+         * The remaining iterations vary the quad count, including zero.
+         */
+        blocks = iter < 256 ? 32 : (iter / 16) % 33;
         n = blocks * 4;
         color = rnd ();
         if (iter % 13 == 0)
