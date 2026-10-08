@@ -93,27 +93,79 @@ bilinear_fetch (const uint32_t *src_base, int stride,
  * equals the full Pixman four-tap bilinear_interpolation bit for bit.
  * The general case still calls Pixman's four-tap scalar interpolation.
  */
+/* Reuse the two Y rows for every sample in a scanline.
+ * Row pointers are NULL for REPEAT_NONE outside the source image.
+ * The fast sampler reduces four pairs of repeat() coordinate checks
+ * per pixel to just the two X coordinates.
+ */
+static force_inline uint32_t
+bilinear_row_pixel (const uint32_t *row, int x, pixman_bool_t valid,
+                    pixman_bool_t source_opaque)
+{
+    uint32_t pixel;
+    if (!row || !valid)
+        return 0;
+    pixel = row[x];
+    return source_opaque ? pixel | 0xff000000u : pixel;
+}
+
+static force_inline uint32_t
+bilinear_fetch_rows (const uint32_t *top, const uint32_t *bottom,
+                     int width, pixman_repeat_t mode, pixman_fixed_t vx,
+                     int disty, pixman_bool_t opaque)
+{
+    int x1 = pixman_fixed_to_int (vx);
+    int distx = pixman_fixed_to_bilinear_weight (vx);
+    int x2 = distx ? x1 + 1 : x1;
+    pixman_bool_t left_valid = repeat (mode, &x1, width);
+    pixman_bool_t right_valid;
+    uint32_t tl, tr, bl, br;
+
+    if (distx)
+        right_valid = repeat (mode, &x2, width);
+    else
+    {
+        x2 = x1;
+        right_valid = left_valid;
+    }
+
+    tl = bilinear_row_pixel (top, x1, left_valid, opaque);
+    tr = bilinear_row_pixel (top, x2, right_valid, opaque);
+    bl = bilinear_row_pixel (bottom, x1, left_valid, opaque);
+    br = bilinear_row_pixel (bottom, x2, right_valid, opaque);
+    return bilinear_interpolation (tl, tr, bl, br, distx, disty);
+}
+
+/* An exact two-tap shortcut for horizontal or vertical-only filtering.
+ * Returns unmodified source pixel pairs and the second /256 weight;
+ * EE MMI performs all channel interpolation.
+ */
 static force_inline void
-bilinear_fetch_two_taps (const uint32_t *src_base, int stride,
-                         int width, int height, pixman_repeat_t mode,
-                         pixman_fixed_t vx, pixman_fixed_t vy,
-                         pixman_bool_t source_opaque,
-                         pixman_bool_t vertical,
+bilinear_fetch_two_taps (const uint32_t *top, const uint32_t *bottom,
+                         int width, pixman_repeat_t mode,
+                         pixman_fixed_t vx, int disty,
+                         pixman_bool_t opaque, pixman_bool_t vertical,
                          uint32_t *first, uint32_t *second,
                          unsigned int *second_weight)
 {
     int x = pixman_fixed_to_int (vx);
-    int y = pixman_fixed_to_int (vy);
-    int dist = vertical ? pixman_fixed_to_bilinear_weight (vy) :
-                          pixman_fixed_to_bilinear_weight (vx);
-    int next_x = vertical ? x : (dist ? x + 1 : x);
-    int next_y = vertical && dist ? y + 1 : y;
+    int distx = pixman_fixed_to_bilinear_weight (vx);
+    int x2 = vertical || !distx ? x : x + 1;
+    pixman_bool_t valid = repeat (mode, &x, width);
+    pixman_bool_t right_valid;
 
-    *first = bilinear_sample_one (src_base, stride, width, height, mode,
-                                  x, y, source_opaque);
-    *second = bilinear_sample_one (src_base, stride, width, height, mode,
-                                   next_x, next_y, source_opaque);
-    *second_weight = (unsigned int)dist << 1;
+    if (!vertical && distx)
+        right_valid = repeat (mode, &x2, width);
+    else
+    {
+        x2 = x;
+        right_valid = valid;
+    }
+    *first = bilinear_row_pixel (top, x, valid, opaque);
+    *second = vertical ?
+              bilinear_row_pixel (bottom, x, valid, opaque) :
+              bilinear_row_pixel (top, x2, right_valid, opaque);
+    *second_weight = (unsigned int)(vertical ? disty : distx) << 1;
 }
 
 /* The same scalar premultiplied OVER calculation as Pixman's fast path. */
@@ -204,6 +256,22 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
         }
         else
         {
+            int ty = pixman_fixed_to_int (vy);
+            int by = disty ? ty + 1 : ty;
+            const uint32_t *top, *bottom;
+
+            if (repeat (repeat_mode, &ty, src_height))
+                top = src_base + (ptrdiff_t)ty * src_stride;
+            else
+                top = NULL;
+
+            if (!disty)
+                bottom = top;
+            else if (repeat (repeat_mode, &by, src_height))
+                bottom = src_base + (ptrdiff_t)by * src_stride;
+            else
+                bottom = NULL;
+
             while (n && ((uintptr_t)dst & 15))
             {
                 uint32_t s = bilinear_fetch (src_base, src_stride,
@@ -235,9 +303,8 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
                         int j;
 
                         bilinear_fetch_two_taps (
-                            src_base, src_stride, src_width, src_height,
-                            repeat_mode, vx, vy, source_opaque,
-                            two_tap_vertical,
+                            top, bottom, src_width, repeat_mode, vx,
+                            disty, source_opaque, two_tap_vertical,
                             &tap_first[i], &tap_second[i], &w);
 
                         for (j = 0; j < 4; ++j)
@@ -259,9 +326,9 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
                     count = n >= 64 ? 64 : (n & ~(size_t)3);
                     for (i = 0; i < (int)count; ++i)
                     {
-                        staged[i] = bilinear_fetch (
-                            src_base, src_stride, src_width, src_height,
-                            repeat_mode, vx, vy, source_opaque);
+                        staged[i] = bilinear_fetch_rows (
+                            top, bottom, src_width, repeat_mode,
+                            vx, disty, source_opaque);
                         vx += unit_x;
                     }
                 }
