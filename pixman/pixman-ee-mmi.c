@@ -459,10 +459,8 @@ ee_mmi_fill (pixman_implementation_t *imp,
     else if (bpp == 16)
     {
         /* pixman_fill() passes the 16-bit color in filler's lower halfword.
-     * Replicate it eight times for one aligned 128-bit SQ.
-     */
-    if (bpp == 16)
-    {
+         * Replicate it eight times for one aligned 128-bit SQ.
+         */
         uint32_t p = (uint16_t)filler;
         p |= p << 16;
         for (i = 0; i < 4; ++i)
