@@ -363,6 +363,29 @@ ee_mmi_blt (pixman_implementation_t *imp,
     dst_line = (uint8_t *)dst_bits + (ptrdiff_t)dest_y * dstride +
                (ptrdiff_t)dest_x * (dst_bpp / 8);
 
+    /* Different base pointers can nevertheless refer to overlapping
+     * views into one allocation. The row-order optimization below is
+     * valid only for an identical bits base and identical stride.
+     * Decline complex overlaps instead of silently corrupting pixels.
+     */
+    if (src_bits != dst_bits)
+    {
+        uintptr_t s0 = (uintptr_t)src_line;
+        uintptr_t s1 = (uintptr_t)(src_line +
+                                   (ptrdiff_t)(height - 1) * sstride);
+        uintptr_t d0 = (uintptr_t)dst_line;
+        uintptr_t d1 = (uintptr_t)(dst_line +
+                                   (ptrdiff_t)(height - 1) * dstride);
+        uintptr_t s_min = s0 < s1 ? s0 : s1;
+        uintptr_t s_max = s0 > s1 ? s0 : s1;
+        uintptr_t d_min = d0 < d1 ? d0 : d1;
+        uintptr_t d_max = d0 > d1 ? d0 : d1;
+
+        if (s_min <= d_min ? d_min - s_min < (s_max - s_min) + bytes
+                           : s_min - d_min < (d_max - d_min) + bytes)
+            return FALSE;
+    }
+
     /* If source and target are the same bits image and destination
      * starts at a later logical row, copying bottom-to-top protects
      * source rows from an earlier write (regardless of stride sign).
