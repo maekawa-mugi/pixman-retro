@@ -28,6 +28,10 @@ also removes the backend.
 * `IN` blending from A8 into A8 using two 128-bit loads,
   zero-extend, 16-bit PMULTH, PMFHL.LH, exact Pixman /255 rounding,
   PPACB packing and one 128-bit store per 16 pixels.
+* Nearest-neighbor scaled `OVER` for 32-bit ARGB/ABGR/XRGB/XBGR8888
+  into matching 32-bit destinations, using Pixman's original nearest
+  transform/repeat sampler followed by 64-pixel MMI OVER batches.
+  Reads/writes that share the same image bits stay scalar.
 * Unmasked same-format `SRC` copying of A8 and RGB565/BGR565,
   in addition to the existing 32-bit formats.
 * `SRC`: 32-bit same-format copies for ARGB8888, ABGR8888,
@@ -56,8 +60,8 @@ also removes the backend.
   XBGR8888 to BGR565.
 
 All other operations continue through the normal Pixman fallback chain.
-Unsupported mask formats, non-solid-source component-alpha, and
-bilinear/nearest scaling are **not** accelerated. The RGB565 OVER implementation performs
+Unsupported mask formats, non-solid-source component-alpha, bilinear
+scaling, and scaled SRC (including nearest SRC) are **not** accelerated. The RGB565 OVER implementation performs
 scalar RGB565 expansion followed by two MMI OVER blocks and an MMI
 conversion block; its performance is workload-dependent and may not
 beat Pixman's original scalar routine.
@@ -104,6 +108,10 @@ Recommended checks:
   aliasing, short spans, and destination alignment offsets 0..14 by 2.
 * 8- and 16-bit fill for every possible x alignment, odd widths, and
   negative strides.
+* Nearest-neighbor scaling: PAD/NONE/NORMAL/REFLECT repeat, negative
+  scales, transparent out-of-bounds samples, image aliasing, 16-byte
+  alignment, source with ignored high alpha bytes, and coordinate
+  rounding around half-pixel boundaries.
 * A8 IN: all source/destination alpha byte combinations, 16-byte
   alignment offsets, source/destination overlap and identical pointers.
 * Component-alpha solid OVER: each of the 4 mask channels at boundaries,
