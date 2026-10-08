@@ -457,6 +457,8 @@ extern void ee_mmi_composite_over_solid_8888_ca (pixman_implementation_t *,
                                                   pixman_composite_info_t *);
 extern void ee_mmi_composite_nearest_over_8888 (pixman_implementation_t *,
                                                 pixman_composite_info_t *);
+extern void ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *,
+                                                 pixman_composite_info_t *);
 
 /* Match exactly the existing Pixman scaled-nearest fast path requirements.
  * This permits all repeat modes, using Pixman's own coordinate handling.
@@ -471,8 +473,30 @@ extern void ee_mmi_composite_nearest_over_8888 (pixman_implementation_t *,
       PIXMAN_null, 0, PIXMAN_ ## d, FAST_PATH_STD_DEST_FLAGS, \
       ee_mmi_composite_nearest_over_8888 }
 
+/* Bilinear uses Pixman's built-in bilinear_interpolation() for exact
+ * color rounding and only accelerates the following OVER blending.
+ */
+#define EE_MMI_SCALED_BILINEAR_FLAGS \
+    (FAST_PATH_SCALE_TRANSFORM | FAST_PATH_NO_ALPHA_MAP | \
+     FAST_PATH_BILINEAR_FILTER | FAST_PATH_NO_ACCESSORS | \
+     FAST_PATH_NARROW_FORMAT)
+
+#define EE_MMI_BILINEAR_OVER(s, d) \
+    { PIXMAN_OP_OVER, PIXMAN_ ## s, EE_MMI_SCALED_BILINEAR_FLAGS, \
+      PIXMAN_null, 0, PIXMAN_ ## d, FAST_PATH_STD_DEST_FLAGS, \
+      ee_mmi_composite_bilinear_over_8888 }
+
 static const pixman_fast_path_t ee_mmi_fast_paths[] =
 {
+    EE_MMI_BILINEAR_OVER (a8r8g8b8, a8r8g8b8),
+    EE_MMI_BILINEAR_OVER (a8r8g8b8, x8r8g8b8),
+    EE_MMI_BILINEAR_OVER (x8r8g8b8, a8r8g8b8),
+    EE_MMI_BILINEAR_OVER (x8r8g8b8, x8r8g8b8),
+    EE_MMI_BILINEAR_OVER (a8b8g8r8, a8b8g8r8),
+    EE_MMI_BILINEAR_OVER (a8b8g8r8, x8b8g8r8),
+    EE_MMI_BILINEAR_OVER (x8b8g8r8, a8b8g8r8),
+    EE_MMI_BILINEAR_OVER (x8b8g8r8, x8b8g8r8),
+
     EE_MMI_NEAREST_OVER (a8r8g8b8, a8r8g8b8),
     EE_MMI_NEAREST_OVER (a8r8g8b8, x8r8g8b8),
     EE_MMI_NEAREST_OVER (x8r8g8b8, a8r8g8b8),

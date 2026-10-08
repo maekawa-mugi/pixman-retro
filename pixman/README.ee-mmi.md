@@ -32,6 +32,10 @@ also removes the backend.
   into matching 32-bit destinations, using Pixman's original nearest
   transform/repeat sampler followed by 64-pixel MMI OVER batches.
   Reads/writes that share the same image bits stay scalar.
+* Bilinear scaled `OVER` for the same 32-bit format families, using
+  Pixman's `bilinear_interpolation` and fractional weights, with
+  four taps from Pixman's repeat rules. The expensive blend is batched
+  through the EE MMI OVER kernel. Aliased source/destination stays scalar.
 * Unmasked same-format `SRC` copying of A8 and RGB565/BGR565,
   in addition to the existing 32-bit formats.
 * `SRC`: 32-bit same-format copies for ARGB8888, ABGR8888,
@@ -60,8 +64,9 @@ also removes the backend.
   XBGR8888 to BGR565.
 
 All other operations continue through the normal Pixman fallback chain.
-Unsupported mask formats, non-solid-source component-alpha, bilinear
-scaling, and scaled SRC (including nearest SRC) are **not** accelerated. The RGB565 OVER implementation performs
+Unsupported mask formats, non-solid-source component-alpha, and
+scaled SRC are **not** accelerated. Scaled OVER (nearest and bilinear)
+uses scalar sampling with MMI blending, so speedups are not guaranteed. The RGB565 OVER implementation performs
 scalar RGB565 expansion followed by two MMI OVER blocks and an MMI
 conversion block; its performance is workload-dependent and may not
 beat Pixman's original scalar routine.
@@ -108,6 +113,9 @@ Recommended checks:
   aliasing, short spans, and destination alignment offsets 0..14 by 2.
 * 8- and 16-bit fill for every possible x alignment, odd widths, and
   negative strides.
+* Bilinear scaling: PAD/NONE/NORMAL/REFLECT repeat, edge samples,
+  partially transparent bilinear taps, transformed negative coordinates,
+  negative scale factors, and bilinear weights around 0 and 255.
 * Nearest-neighbor scaling: PAD/NONE/NORMAL/REFLECT repeat, negative
   scales, transparent out-of-bounds samples, image aliasing, 16-byte
   alignment, source with ignored high alpha bytes, and coordinate
