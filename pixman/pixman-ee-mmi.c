@@ -535,6 +535,8 @@ extern void ee_mmi_composite_over_8888_8_8888 (pixman_implementation_t *,
                                                 pixman_composite_info_t *);
 extern void ee_mmi_composite_over_solid_8888 (pixman_implementation_t *,
                                                pixman_composite_info_t *);
+extern void ee_mmi_composite_over_image_8888_ca (pixman_implementation_t *,
+                                                   pixman_composite_info_t *);
 extern void ee_mmi_composite_over_solid_8888_ca (pixman_implementation_t *,
                                                   pixman_composite_info_t *);
 extern void ee_mmi_composite_nearest_over_8888 (pixman_implementation_t *,
@@ -593,6 +595,16 @@ static const pixman_fast_path_t ee_mmi_fast_paths[] =
 
     PIXMAN_STD_FAST_PATH (IN, a8, null, a8,
                           ee_mmi_composite_in_a8),
+
+    /* Image and component-alpha mask must share channel order. */
+    PIXMAN_STD_FAST_PATH_CA (OVER, a8r8g8b8, a8r8g8b8, a8r8g8b8,
+                             ee_mmi_composite_over_image_8888_ca),
+    PIXMAN_STD_FAST_PATH_CA (OVER, a8r8g8b8, a8r8g8b8, x8r8g8b8,
+                             ee_mmi_composite_over_image_8888_ca),
+    PIXMAN_STD_FAST_PATH_CA (OVER, a8b8g8r8, a8b8g8r8, a8b8g8r8,
+                             ee_mmi_composite_over_image_8888_ca),
+    PIXMAN_STD_FAST_PATH_CA (OVER, a8b8g8r8, a8b8g8r8, x8b8g8r8,
+                             ee_mmi_composite_over_image_8888_ca),
 
     PIXMAN_STD_FAST_PATH_CA (OVER, solid, a8r8g8b8, a8r8g8b8,
                              ee_mmi_composite_over_solid_8888_ca),

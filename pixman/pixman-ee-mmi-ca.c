@@ -220,3 +220,66 @@ ee_mmi_composite_over_solid_8888_ca (pixman_implementation_t *imp,
         dst_line += dst_stride;
     }
 }
+
+/* Image + component-alpha OVER; source alpha varies per pixel. */
+extern void ee_mmi_over_image_ca_quads (uint32_t *dst, const uint32_t *src,
+                                        const uint32_t *mask, unsigned int quads,
+                                        const uint16_t *constants);
+static const uint16_t image_ca_constants[16] __attribute__((aligned(16))) =
+{
+    255,255,255,255,255,255,255,255,
+    128,128,128,128,128,128,128,128
+};
+static void
+image_ca_over_span (uint32_t *dst, const uint32_t *src,
+                    const uint32_t *mask, size_t n)
+{
+    size_t blocks;
+    if (n < 16 || (((uintptr_t)dst ^ (uintptr_t)src) & 15) ||
+        (((uintptr_t)dst ^ (uintptr_t)mask) & 15) ||
+        overlap_32 (dst, src, n) || overlap_32 (dst, mask, n))
+    {
+        while (n--)
+            ca_over_scalar (dst++, *src++, *mask++);
+        return;
+    }
+    while (n && ((uintptr_t)dst & 15))
+    {
+        ca_over_scalar (dst++, *src++, *mask++);
+        --n;
+    }
+    blocks = n / 4;
+    if (blocks)
+    {
+        ee_mmi_over_image_ca_quads (dst, src, mask,
+                                     (unsigned int)blocks, image_ca_constants);
+        dst += blocks * 4;
+        src += blocks * 4;
+        mask += blocks * 4;
+        n -= blocks * 4;
+    }
+    while (n--)
+        ca_over_scalar (dst++, *src++, *mask++);
+}
+void
+ee_mmi_composite_over_image_8888_ca (pixman_implementation_t *imp,
+                                      pixman_composite_info_t *info)
+{
+    PIXMAN_COMPOSITE_ARGS (info);
+    uint32_t *src_line, *mask_line, *dst_line;
+    int src_stride, mask_stride, dst_stride;
+
+    PIXMAN_IMAGE_GET_LINE (src_image, src_x, src_y, uint32_t,
+                           src_stride, src_line, 1);
+    PIXMAN_IMAGE_GET_LINE (mask_image, mask_x, mask_y, uint32_t,
+                           mask_stride, mask_line, 1);
+    PIXMAN_IMAGE_GET_LINE (dest_image, dest_x, dest_y, uint32_t,
+                           dst_stride, dst_line, 1);
+    while (height-- > 0)
+    {
+        image_ca_over_span (dst_line, src_line, mask_line, (size_t)width);
+        src_line += src_stride;
+        mask_line += mask_stride;
+        dst_line += dst_stride;
+    }
+}
