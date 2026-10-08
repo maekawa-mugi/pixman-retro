@@ -140,7 +140,7 @@ ee_mmi_bilinear_hsum_quads:
     pmulth  $t7, $t3, $t5
     pmfhl.lh $t7
     padduh  $t6, $t6, $t7
-    sq      $t6, 32($a0)
+    sq      $t6, 16($a0)
 
     addiu   $a0, $a0, 32
     addiu   $a1, $a1, 16
