@@ -145,7 +145,7 @@ main (void)
                 if (memcmp (dst, expect, sizeof (dst)) ||
                     memcmp (src, src_copy, sizeof (src)))
                 {
-                    printf ("FAIL exhaustive mode=%u base=%u\\n", mode, base);
+                    printf ("FAIL exhaustive mode=%u base=%u\n", mode, base);
                     return 1;
                 }
             }
