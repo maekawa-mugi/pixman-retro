@@ -25,6 +25,9 @@ also removes the backend.
 
 * Saturating `ADD`: ARGB8888 to ARGB8888, ABGR8888 to ABGR8888,
   and A8 to A8.
+* `IN` blending from A8 into A8 using two 128-bit loads,
+  zero-extend, 16-bit PMULTH, PMFHL.LH, exact Pixman /255 rounding,
+  PPACB packing and one 128-bit store per 16 pixels.
 * Unmasked same-format `SRC` copying of A8 and RGB565/BGR565,
   in addition to the existing 32-bit formats.
 * `SRC`: 32-bit same-format copies for ARGB8888, ABGR8888,
@@ -101,6 +104,8 @@ Recommended checks:
   aliasing, short spans, and destination alignment offsets 0..14 by 2.
 * 8- and 16-bit fill for every possible x alignment, odd widths, and
   negative strides.
+* A8 IN: all source/destination alpha byte combinations, 16-byte
+  alignment offsets, source/destination overlap and identical pointers.
 * Component-alpha solid OVER: each of the 4 mask channels at boundaries,
   opaque source, zero/full masks, partial mask alpha, negative strides,
   row alignment, and overlapping mask/destination image buffers.

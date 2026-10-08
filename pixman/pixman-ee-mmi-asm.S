@@ -63,3 +63,46 @@ ee_mmi_fill_quads:
     jr      $ra
      nop
     .end    ee_mmi_fill_quads
+
+
+/* A8 IN blending, 16 lanes: dst[i] = round(src[i] * dst[i] / 255).
+ * The two 128-bit input pointers are aligned on entry.
+ * a3 points to eight aligned 0x0080 halfword constants.
+ */
+    .align 2
+    .globl ee_mmi_in_a8_quads
+    .ent ee_mmi_in_a8_quads
+ee_mmi_in_a8_quads:
+    beqz    $a2, 2f
+     nop
+    lq      $v1, 0($a3)
+1:
+    lq      $t0, 0($a1)
+    lq      $t1, 0($a0)
+    pextlb  $t2, $zero, $t0
+    pextlb  $t3, $zero, $t1
+    pmulth  $t4, $t2, $t3
+    addiu   $a1, $a1, 16
+    pmfhl.lh $t4
+    padduh  $t4, $t4, $v1
+    psrlh   $t5, $t4, 8
+    padduh  $t4, $t4, $t5
+    psrlh   $t6, $t4, 8
+    pextub  $t2, $zero, $t0
+    pextub  $t3, $zero, $t1
+    pmulth  $t4, $t2, $t3
+    addiu   $a2, $a2, -1
+    pmfhl.lh $t4
+    padduh  $t4, $t4, $v1
+    psrlh   $t5, $t4, 8
+    padduh  $t4, $t4, $t5
+    psrlh   $t7, $t4, 8
+    ppacb   $t7, $t7, $t6
+    sq      $t7, 0($a0)
+    addiu   $a0, $a0, 16
+    bnez    $a2, 1b
+     nop
+2:
+    jr      $ra
+     nop
+    .end ee_mmi_in_a8_quads

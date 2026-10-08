@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "pixman-private.h"
+#include "pixman-combine32.h"
 
 /* Assembly routines accept ONLY 16-byte aligned pointers and whole quads.
  * The C side handles misaligned heads, tails, small spans, and overlaps.
@@ -39,6 +40,14 @@ extern void ee_mmi_copy_quads (uint8_t *dst, const uint8_t *src,
                                unsigned int quads);
 extern void ee_mmi_fill_quads (uint8_t *dst, const uint32_t *pattern,
                                unsigned int quads);
+extern void ee_mmi_in_a8_quads (uint8_t *dst, const uint8_t *src,
+                                unsigned int quads,
+                                const uint16_t *rounding);
+
+static const uint16_t in_a8_rounding[8] __attribute__((aligned(16))) =
+{
+    128, 128, 128, 128, 128, 128, 128, 128
+};
 
 static void
 add_bytes_scalar (uint8_t *dst, const uint8_t *src, size_t n)
@@ -180,6 +189,75 @@ ee_mmi_composite_src_0565 (pixman_implementation_t *imp,
     while (height-- > 0)
     {
         copy_bytes (dst_line, src_line, (size_t)width * 2);
+        src_line += src_stride;
+        dst_line += dst_stride;
+    }
+}
+
+/* A8 IN: dst = round(src * dst / 255), lane-wise. */
+static void
+in_bytes_scalar (uint8_t *dst, const uint8_t *src, size_t n)
+{
+    size_t i;
+    uint16_t tmp;
+
+    for (i = 0; i < n; ++i)
+        dst[i] = MUL_UN8 (src[i], dst[i], tmp);
+}
+
+static void
+in_bytes (uint8_t *dst, const uint8_t *src, size_t n)
+{
+    size_t prefix;
+    unsigned int quads;
+
+    /* A separate overlapping source changes forward traversal.
+     * Handle such cases one byte at a time, like Pixman's C path.
+     */
+    if (n < 64 || (((uintptr_t)dst ^ (uintptr_t)src) & 15) ||
+        (dst != src && overlaps (dst, src, n)))
+    {
+        in_bytes_scalar (dst, src, n);
+        return;
+    }
+
+    prefix = (16 - ((uintptr_t)dst & 15)) & 15;
+    if (prefix)
+    {
+        in_bytes_scalar (dst, src, prefix);
+        dst += prefix;
+        src += prefix;
+        n -= prefix;
+    }
+
+    quads = (unsigned int)(n / 16);
+    if (quads)
+    {
+        ee_mmi_in_a8_quads (dst, src, quads, in_a8_rounding);
+        dst += (size_t)quads * 16;
+        src += (size_t)quads * 16;
+        n -= (size_t)quads * 16;
+    }
+
+    in_bytes_scalar (dst, src, n);
+}
+
+static void
+ee_mmi_composite_in_a8 (pixman_implementation_t *imp,
+                        pixman_composite_info_t *info)
+{
+    PIXMAN_COMPOSITE_ARGS (info);
+    uint8_t *src_line, *dst_line;
+    int src_stride, dst_stride;
+
+    PIXMAN_IMAGE_GET_LINE (src_image, src_x, src_y, uint8_t,
+                           src_stride, src_line, 1);
+    PIXMAN_IMAGE_GET_LINE (dest_image, dest_x, dest_y, uint8_t,
+                           dst_stride, dst_line, 1);
+
+    while (height-- > 0)
+    {
+        in_bytes (dst_line, src_line, (size_t)width);
         src_line += src_stride;
         dst_line += dst_stride;
     }
@@ -380,6 +458,9 @@ extern void ee_mmi_composite_over_solid_8888_ca (pixman_implementation_t *,
 
 static const pixman_fast_path_t ee_mmi_fast_paths[] =
 {
+    PIXMAN_STD_FAST_PATH (IN, a8, null, a8,
+                          ee_mmi_composite_in_a8),
+
     PIXMAN_STD_FAST_PATH_CA (OVER, solid, a8r8g8b8, a8r8g8b8,
                              ee_mmi_composite_over_solid_8888_ca),
     PIXMAN_STD_FAST_PATH_CA (OVER, solid, a8r8g8b8, x8r8g8b8,
