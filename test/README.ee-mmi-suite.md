@@ -21,7 +21,7 @@ The suite combines the pre-existing component-alpha, solid+A8, RGB565, image+A8,
 image+CA and scaling kernel differential tests, adds scalar-vs-MMI tests of ADD, COPY, FILL, A8 IN,
 unmasked 8888 OVER, and 8888-to-565 SRC. All aligned assembly tests
 include zero counts and untouched canaries. The timing section includes fused Solid+CA, Solid+A8, image+A8, RGB565 OVER and 8888->565 SRC and emits
-`BENCH_CSV` records (microseconds and C/MMI speedup) for thirteen operations
+`BENCH_CSV` records (microseconds and C/MMI speedup) for fifteen operations
 at 64, 256, 1024, 4096, and 16384 bytes.
 
 To collect the **whole Pixman** dispatch/correctness checks too, transfer
@@ -136,9 +136,27 @@ into `ee-mmi-suite` and `host-check`.
 ## Nearest/Bilinear dedicated microbenchmarks
 
 The direct-kernel microbenchmark additionally emits `NEAREST_OPAQUE_COPY`
-and `BILINEAR_2TAP` rows, giving **13 kernels x 5 buffer sizes = 65**
+and `BILINEAR_2TAP` rows, giving **15 kernels x 5 buffer sizes = 75**
 measurements. These isolate the aligned EE MMI computation from
 coordinate-gather and coefficient-preparation overhead. For real-world
 throughput, prefer the Pixman API benchmark's
 `NEAREST_1X`, `NEAREST_XRGB_1X`, `BILINEAR_X_ONLY`,
 `BILINEAR_Y_ONLY`, and `BILINEAR_OVER` workloads.
+
+## Full 4-tap bilinear correctness and timing
+
+The wide-spans full-2D path (at least 64 remaining pixels, no
+source/destination alias) now executes two horizontal numerator kernels
+and one exact vertical finish kernel before the existing MMI OVER.
+The two additional direct microbenchmark entries are
+`BILINEAR_HSUM` and `BILINEAR_VFINISH`; these isolate computation
+from the C-side four-corner gather. `BILINEAR_OVER` in
+`ee-mmi-pixman-bench` measures the *whole* path at various sizes.
+
+`test/ee-mmi-bilinear-4tap-test.c` is included in `ee-mmi-suite`
+and native `host-check`. It verifies 5,000 cases over all 128 vertical
+filter fractions, multiple horizontal weights and 0..32 quads.
+**Performance and build correctness on a real EE are still unknown.**
+The multi-pass SIMD kernel can underperform the scalar path if staging
+and instruction scheduling dominate; compare whole-image measurements
+before relying on it as a speedup.

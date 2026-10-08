@@ -35,14 +35,18 @@ also removes the backend.
   gathering into 64-pixel scratch. Opaque XRGB/XBGR uses a new quadword
   alpha-forcing copy kernel. Other scales and repeat edge cases retain
   the existing MMI-staged pixel gather; aliased images stay scalar.
-* Bilinear scaled `OVER` for the same families. A new exact two-tap
-  MMI kernel handles horizontal-only filtering (zero vertical fraction)
-  and vertical-only filtering (zero horizontal fraction with integer
-  source-X step). The kernel evaluates four pixels per 128-bit quad
-  with Pixman's precise 7-bit/8-bit weight behavior. Arbitrary full
-  four-tap 2D interpolation stays scalar and bit exact, but bulk paths
-  now cache Y-repeat per scanline and reuse X-repeat tests; blending
-  still uses EE MMI. Aliased images stay scalar.
+* Bilinear scaled `OVER` for the same families. Exact 2-tap EE MMI
+  handles horizontal-only filtering (zero vertical fraction) and
+  vertical-only filtering (zero horizontal fraction with integral
+  source-X step). A new **exact 4-tap EE MMI pipeline** accelerates
+  wide (>= 64 pixels remaining), non-aliased general 2D filtering:
+  horizontal PMULTH generates full 16-bit numerators for both source
+  rows, and a vertical PMULTH/shift/carry pass evaluates the original
+  Pixman /65536 expression without intermediate rounding. Four pixels
+  are processed per quad. Small spans remain with Pixman's scalar
+  four-tap interpolation. Bulk paths cache Y-repeat per scanline and
+  reuse X-repeat tests; blending still uses EE MMI. Aliased images
+  stay scalar.
 * Unmasked same-format `SRC` copying of A8 and RGB565/BGR565,
   in addition to the existing 32-bit formats.
 * Direct `pixman_blt` for 8/16/32bpp copying, using EE 128-bit
@@ -198,9 +202,18 @@ and `ee_mmi_bilinear_lerp_quads`. Bilinear coefficients are 16-bit
 integer weights summing to 256 on every channel and for every pixel.
 The products and sum fit in 16-bit unsigned halfwords (maximum 65280),
 so the /256 rounding is **truncate**, matching Pixman interpolation
-when exactly one axis has zero fractional weight. Arbitrary 2D
-bilinear scaling continues to use `bilinear_interpolation()` to
-avoid introducing rounding errors.
+when exactly one axis has zero fractional weight. General 2D
+bilinear scaling now has two dedicated EE MMI stages:
+`ee_mmi_bilinear_hsum_quads` produces top/bottom horizontal
+numerators as 16-bit values and `ee_mmi_bilinear_vfinish_quads`
+combines the two numerators with the exact Pixman /65536 rounding.
+If a horizontal numerator H = 256*hi + lo, then the final byte is
+`(hi*w0 + hi2*w1 + ((lo*w0 + lo2*w1) >> 8)) >> 8`;
+each intermediate is at most 65535. The full four-tap path is
+used for sufficiently wide (>=64 pixel) unaliased runs; smaller
+runs retain the original scalar bilinear interpolation. All MMI
+bilinear paths still gather their source taps in C and incur
+staging, so actual speedups are workload-dependent.
 
 The integrated `ee_test_scale` runs 12,000 separate cases of nearest
 opaque and two-tap interpolation, checking weights 0..256, 0..32 quad
@@ -210,3 +223,10 @@ single-axis horizontal/vertical Bilinear, comparing enabled and
 disabled EE backend checksums. **EE toolchain/real PS2 execution and
 performance have not been verified**; the MMI path may not win when
 gather/weight staging or 128-bit multiplies dominate runtime.
+
+The separate `ee_test_bilinear4` regression performs 5,000
+comparisons of the **actual four-tap EE entry points** with an
+independent seven-bit Pixman reference, including horizontal
+numerators, vertical pixels, source immutability and buffer guards.
+A complete model of the committed instruction sequence also passed
+700 randomized cases; this is not hardware validation.
