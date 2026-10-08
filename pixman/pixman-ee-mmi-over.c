@@ -124,6 +124,23 @@ ee_mmi_composite_over_8888 (pixman_implementation_t *imp,
     }
 }
 
+extern void ee_mmi_over_8888_0565_quads (uint16_t *dst,
+                                            const uint32_t *src,
+                                            unsigned int blocks,
+                                            const uint32_t *constants);
+
+/* Bit-accurate RGB565 expansion, OVER and reduction in one EE MMI loop. */
+static const uint32_t over_565_constants[28] __attribute__((aligned(16))) =
+{
+    0x001f001f, 0x001f001f, 0x001f001f, 0x001f001f,
+    0x003f003f, 0x003f003f, 0x003f003f, 0x003f003f,
+    0x00ff00ff, 0x00ff00ff, 0x00ff00ff, 0x00ff00ff,
+    0x00800080, 0x00800080, 0x00800080, 0x00800080,
+    0x0000f800, 0x0000f800, 0x0000f800, 0x0000f800,
+    0x000007e0, 0x000007e0, 0x000007e0, 0x000007e0,
+    0x0000001f, 0x0000001f, 0x0000001f, 0x0000001f
+};
+
 /* RGB565 and BGR565 use the same bit extraction: the two 8888 channel
  * orders are paired with their corresponding 0565 channel orders. */
 static void
@@ -353,19 +370,34 @@ over_565_span (uint16_t *dst, const uint32_t *src, size_t n)
         --n;
     }
 
-    while (n >= 8)
+    /* Direct 565 expansion + blend + 565 packing when source and
+     * destination are both 16-byte aligned. No scratch or extra calls.
+     * Other alignments retain the tested staged EE MMI path.
+     */
+    if (n >= 8 && (((uintptr_t)src & 15) == 0))
     {
-        for (i = 0; i < 8; ++i)
+        unsigned int blocks = (unsigned int)(n / 8);
+        ee_mmi_over_8888_0565_quads (dst, src, blocks, over_565_constants);
+        dst += (size_t)blocks * 8;
+        src += (size_t)blocks * 8;
+        n -= (size_t)blocks * 8;
+    }
+    else
+    {
+        while (n >= 8)
         {
-            dst_quads[i] = convert_0565_to_0888 (dst[i]);
-            src_quads[i] = src[i];
-        }
+            for (i = 0; i < 8; ++i)
+            {
+                dst_quads[i] = convert_0565_to_0888 (dst[i]);
+                src_quads[i] = src[i];
+            }
 
-        ee_mmi_over_quads (dst_quads, src_quads, 2, over_constants);
-        ee_mmi_8888_to_0565_quads (dst, dst_quads, 1, convert_masks);
-        dst += 8;
-        src += 8;
-        n -= 8;
+            ee_mmi_over_quads (dst_quads, src_quads, 2, over_constants);
+            ee_mmi_8888_to_0565_quads (dst, dst_quads, 1, convert_masks);
+            dst += 8;
+            src += 8;
+            n -= 8;
+        }
     }
 
     while (n--)

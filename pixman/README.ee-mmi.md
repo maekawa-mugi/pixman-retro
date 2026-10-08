@@ -68,18 +68,20 @@ also removes the backend.
 * Unmasked solid-color `OVER` into 8888, using an aligned repeated
   source buffer and the same EE MMI kernel.
 * Unmasked `OVER` from ARGB8888 into RGB565 and from ABGR8888 into
-  BGR565, using an aligned eight-pixel scratch block to reuse the
-  existing MMI OVER and RGB565 packing kernels.
+  BGR565. When both scanlines align at a 16-byte boundary, a fused EE
+  MMI eight-pixel kernel expands RGB565, performs exact /255 OVER and
+  repacks RGB565 without scratch. Incompatible source alignment retains
+  the original eight-pixel staged MMI implementation.
 * `SRC` from ARGB8888 / XRGB8888 to RGB565, and from ABGR8888 /
   XBGR8888 to BGR565.
 
 All other operations continue through the normal Pixman fallback chain.
 Unsupported mask formats, non-solid-source component-alpha, and
 scaled SRC are **not** accelerated. Scaled OVER (nearest and bilinear)
-uses scalar sampling with MMI blending, so speedups are not guaranteed. The RGB565 OVER implementation performs
-scalar RGB565 expansion followed by two MMI OVER blocks and an MMI
-conversion block; its performance is workload-dependent and may not
-beat Pixman's original scalar routine.
+uses scalar sampling with MMI blending, so speedups are not guaranteed.
+RGB565 OVER uses the fused register-only kernel for aligned scanlines
+and keeps the original staged scalar-expansion fallback for other
+alignments; both require workload-specific benchmarks.
 
 ## Alignment and correctness
 
