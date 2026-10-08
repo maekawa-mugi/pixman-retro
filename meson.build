@@ -437,6 +437,39 @@ elif use_a64neon.enabled()
   error('A64 NEON Support unavailable, but required')
 endif
 
+# EE MMI is distinct from both Loongson MMI and MIPS DSP R2.
+# Assemble a real EE instruction to avoid enabling this backend on generic MIPS.
+use_ee_mmi = get_option('ee-mmi')
+have_ee_mmi = false
+if not use_ee_mmi.disabled()
+  if host_machine.cpu_family().startswith('mips')
+    if cc.compiles('''
+        #ifndef __mips__
+        #error PS2 EE MMI requires a MIPS target.
+        #endif
+        void ee_mmi_probe (void)
+        {
+            __asm__ __volatile__ (
+                "lq $8, 0($sp)\\n\\t"
+                "lq $9, 0($sp)\\n\\t"
+                "paddub $8, $8, $9\\n\\t"
+                "sq $8, 0($sp)\\n\\t"
+                :
+                :
+                : "$8", "$9", "memory");
+        }
+      ''', name : 'PlayStation 2 EE MMI instruction support')
+      have_ee_mmi = true
+    endif
+  endif
+endif
+
+if have_ee_mmi
+  config.set10('USE_EE_MMI', true)
+elif use_ee_mmi.enabled()
+  error('PS2 EE MMI support unavailable, but required')
+endif
+
 use_mips_dspr2 = get_option('mips-dspr2')
 have_mips_dspr2 = false
 mips_dspr2_flags = ['-mdspr2']
