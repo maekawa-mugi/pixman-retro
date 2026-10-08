@@ -80,7 +80,8 @@ overlap_32 (const uint32_t *x, const uint32_t *y, size_t n)
     return a <= b ? b - a < size : a - b < size;
 }
 
-static void
+/* Keep the 512-byte prepared fallback frame out of the fused hot path. */
+static void __attribute__((noinline))
 ca_over_span_staged (uint32_t *dst, const uint32_t *mask, size_t n,
                      uint32_t color)
 {
