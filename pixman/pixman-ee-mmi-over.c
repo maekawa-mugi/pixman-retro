@@ -548,6 +548,17 @@ ee_mmi_composite_over_solid_8888 (pixman_implementation_t *imp,
     if (!solid)
         return;
 
+    /* OVER with an opaque solid source is exactly SRC. Avoid the
+     * multiply/pack pipeline and use Pixman's accelerated fill hook.
+     */
+    if ((solid >> 24) == 255)
+    {
+        pixman_fill (dest_image->bits.bits, dest_image->bits.rowstride,
+                     PIXMAN_FORMAT_BPP (dest_image->bits.format),
+                     dest_x, dest_y, width, height, solid);
+        return;
+    }
+
     for (i = 0; i < 64; ++i)
         staged[i] = solid;
 
