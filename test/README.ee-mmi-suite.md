@@ -20,8 +20,8 @@ echo "EXIT_CODE=$?" >> ee-mmi-results.txt
 The suite combines the pre-existing component-alpha, solid+A8, RGB565, and image+A8
 differential tests, adds scalar-vs-MMI tests of ADD, COPY, FILL, A8 IN,
 unmasked 8888 OVER, and 8888-to-565 SRC. All aligned assembly tests
-include zero counts and untouched canaries. The timing section emits
-`BENCH_CSV` records (microseconds and C/MMI speedup) for five operations
+include zero counts and untouched canaries. The timing section includes fused Solid+CA, Solid+A8, image+A8, RGB565 OVER and 8888->565 SRC and emits
+`BENCH_CSV` records (microseconds and C/MMI speedup) for ten operations
 at 64, 256, 1024, 4096, and 16384 bytes.
 
 To collect the **whole Pixman** dispatch/correctness checks too, transfer
