@@ -31,6 +31,17 @@
 extern void ee_mmi_over_quads (uint32_t *dst, const uint32_t *src,
                                unsigned int quads, const uint16_t *constants);
 
+extern void ee_mmi_nearest_opaque_quads (uint32_t *dst,
+                                          const uint32_t *src,
+                                          unsigned int quads,
+                                          const uint32_t *alpha_mask);
+
+static const uint32_t nearest_alpha_mask[4]
+    __attribute__((aligned(16))) =
+{
+    0xff000000u, 0xff000000u, 0xff000000u, 0xff000000u
+};
+
 static const uint16_t nearest_constants[16] __attribute__((aligned(16))) =
 {
     255, 255, 255, 255, 255, 255, 255, 255,
@@ -129,6 +140,63 @@ ee_mmi_composite_nearest_over_8888 (pixman_implementation_t *imp,
             continue;
 
         src = src_base + (ptrdiff_t)sy * src_stride;
+
+        /* At unit X scale, all nearest samples are consecutive.
+         * When this run is wholly in bounds and non-aliased, pass source
+         * directly to EE MMI and skip the 64-pixel staging buffer.
+         * Opaque XRGB needs its high alpha bits set before destination
+         * storage; the dedicated MMI kernel handles that.
+         */
+        if (unit_x == pixman_fixed_1 && !alias && n >= 16)
+        {
+            int first_x = pixman_fixed_to_int (vx);
+
+            if (first_x >= 0 && first_x < src_width &&
+                n <= (size_t)(src_width - first_x))
+            {
+                const uint32_t *contiguous = src + first_x;
+
+                if ((((uintptr_t)dst ^ (uintptr_t)contiguous) & 15) == 0)
+                {
+                    size_t blocks;
+
+                    while (n && ((uintptr_t)dst & 15))
+                    {
+                        uint32_t pixel = *contiguous++;
+                        if (opaque)
+                            pixel |= 0xff000000u;
+                        nearest_over_pixel (dst++, pixel);
+                        --n;
+                    }
+
+                    blocks = n / 4;
+                    if (blocks)
+                    {
+                        if (opaque)
+                            ee_mmi_nearest_opaque_quads (
+                                dst, contiguous, (unsigned int)blocks,
+                                nearest_alpha_mask);
+                        else
+                            ee_mmi_over_quads (
+                                dst, contiguous, (unsigned int)blocks,
+                                nearest_constants);
+
+                        dst += blocks * 4;
+                        contiguous += blocks * 4;
+                        n -= blocks * 4;
+                    }
+
+                    while (n--)
+                    {
+                        uint32_t pixel = *contiguous++;
+                        if (opaque)
+                            pixel |= 0xff000000u;
+                        nearest_over_pixel (dst++, pixel);
+                    }
+                    continue;
+                }
+            }
+        }
 
         if (n < 32 || alias)
         {
