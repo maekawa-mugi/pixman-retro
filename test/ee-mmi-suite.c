@@ -10,6 +10,7 @@ extern int ee_test_ca(void);
 extern int ee_test_solid_a8(void);
 extern int ee_test_565(void);
 extern int ee_test_image_a8(void);
+extern int ee_test_image_ca(void);
 extern void ee_mmi_bench_run(void);
 
 extern void ee_mmi_add_quads(uint8_t *, const uint8_t *, unsigned int);
@@ -178,6 +179,7 @@ int main(int argc,char **argv)
         fail+=ee_test_solid_a8();
         fail+=ee_test_565();
         fail+=ee_test_image_a8();
+        fail+=ee_test_image_ca();
     }
     if(do_bench)
         ee_mmi_bench_run();

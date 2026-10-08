@@ -135,3 +135,11 @@ void ee_mmi_over_image_a8_quads(uint32_t *dst,const uint32_t *src,
     unsigned int i;(void)constants;
     for(i=0;i<4*quads;i++)dst[i]=blend_covered(src[i],dst[i],mask[i]);
 }
+
+void ee_mmi_over_image_ca_quads(uint32_t *dst,const uint32_t *src,
+                                 const uint32_t *mask,unsigned int blocks,
+                                 const uint16_t *constants)
+{
+    unsigned int i;(void)constants;
+    for(i=0;i<blocks*4;i++)dst[i]=blend_ca(src[i],dst[i],mask[i]);
+}

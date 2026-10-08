@@ -15,6 +15,7 @@ extern void ee_mmi_over_quads(uint32_t *,const uint32_t *,unsigned int,const uin
 extern void ee_mmi_ca_over_solid_quads(uint32_t *,const uint32_t *,unsigned int,const uint32_t *);
 extern void ee_mmi_over_solid_a8_quads(uint32_t *,const uint8_t *,unsigned int,const uint32_t *);
 extern void ee_mmi_over_image_a8_quads(uint32_t *,const uint32_t *,const uint8_t *,unsigned int,const uint16_t *);
+extern void ee_mmi_over_image_ca_quads(uint32_t *,const uint32_t *,const uint32_t *,unsigned int,const uint16_t *);
 extern void ee_mmi_over_8888_0565_quads(uint16_t *,const uint32_t *,unsigned int,const uint32_t *);
 extern void ee_mmi_8888_to_0565_quads(uint16_t *,const uint32_t *,unsigned int,const uint32_t *);
 #define CAP 32768
@@ -127,6 +128,9 @@ static void run_kernel(int id,int mmi,unsigned int bytes)
                                             (const uint32_t *)source,n,over565_constants);break;
         case 9:ee_mmi_8888_to_0565_quads((uint16_t *)dest,
                                           (const uint32_t *)source,n,convert_masks);break;
+        case 10:ee_mmi_over_image_ca_quads((uint32_t *)dest,
+                                            (const uint32_t *)source,
+                                            (const uint32_t *)mask_bytes,n,over_const);break;
         }
     }
     else
@@ -186,6 +190,12 @@ static void run_kernel(int id,int mmi,unsigned int bytes)
             for(i=0;i<bytes/2;i++)
                 ((uint16_t *)dest)[i]=reduce565(((uint32_t *)source)[i]);
             break;
+        case 10:
+            for(i=0;i<bytes/4;i++)
+                ((uint32_t *)dest)[i]=ca_blend(((uint32_t *)source)[i],
+                                               ((uint32_t *)dest)[i],
+                                               ((uint32_t *)mask_bytes)[i]);
+            break;
         }
     }
 }
@@ -216,12 +226,12 @@ void ee_mmi_bench_run(void)
     static const char *names[]=
     {"ADD","COPY","FILL","A8_IN","OVER_8888",
      "OVER_SOLID_CA","OVER_SOLID_A8","OVER_IMAGE_A8",
-     "OVER_RGB565","SRC_8888_565"};
+     "OVER_RGB565","SRC_8888_565","OVER_IMAGE_CA"};
     static const unsigned int sizes[]={64,256,1024,4096,16384};
     unsigned int kind,k,loops,bytes;
     unsigned long ctime,mtime;
     puts("BENCH_CSV,kernel,bytes,iterations,c_us,mmi_us,speedup");
-    for(kind=0;kind<10;kind++)
+    for(kind=0;kind<11;kind++)
         for(k=0;k<5;k++)
         {
             bytes=sizes[k];

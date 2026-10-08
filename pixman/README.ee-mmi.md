@@ -47,6 +47,10 @@ also removes the backend.
   XRGB8888, and XBGR8888.
 * 8bpp A8, 16bpp RGB565/BGR565, and 32bpp solid fills through Pixman's
   `fill` implementation hook (16-bit patterns are replicated eight times).
+* Component-alpha `OVER` for image + matching 32-bit ARGB/ABGR
+  CA mask -> ARGB/XRGB/ABGR/XBGR8888. A 3-input EE MMI four-pixel
+  kernel fuses per-pixel source alpha, channel-wise multiplication, and
+  saturated destination blend. Incompatible alignment and overlap stay C.
 * Component-alpha `OVER` for solid + 32bit ARGB/ABGR CA mask ->
   ARGB/XRGB/ABGR/XBGR8888. A fused four-pixel EE MMI path performs mask
   scaling, inverse alpha, and saturating destination composition without
