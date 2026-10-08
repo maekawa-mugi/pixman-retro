@@ -21,11 +21,17 @@ for exe in composite combiner-test blitters-test neg-stride-test scaling-test ee
     fi
     cp "$TEST_BUILD/$exe" "$KIT/tests/$exe"
 done
+# Copy more Pixman validation binaries when available for EE_FULL=1.
+for exe in pixel-test fetch-test solid-test cover-test scaling-helpers-test affine-test composite-traps-test glyph-test; do
+    if [ -f "$TEST_BUILD/$exe" ]; then
+        cp "$TEST_BUILD/$exe" "$KIT/tests/$exe"
+    fi
+done
 cat > "$KIT/README-RUN.txt" <<'EOF'
 PS2 Linux / R5900 one-shot EE MMI validation:
 
   cd ee-mmi-kit
-  sh ./run.sh ./ee-mmi-suite ./tests > ee-mmi-results.log 2>&1
+  EE_FULL=1 sh ./run.sh ./ee-mmi-suite ./tests > ee-mmi-results.log 2>&1
   echo "EXIT_CODE=$?" >> ee-mmi-results.log
 
 Transfer ee-mmi-results.log back for review. Do not discard this log.

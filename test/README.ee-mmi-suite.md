@@ -111,3 +111,13 @@ The GitHub Actions host preflight can fail for runner provisioning or
 other platform reasons; without job logs and completed build steps
 it must not be interpreted as evidence that the EE code compiled or
 failed. Run `host-check` locally before archiving.
+
+## Exhaustive Pixman test mode
+
+Set `EE_FULL=1` before running the kit to additionally execute
+`pixel-test`, `fetch-test`, `solid-test`, `cover-test`,
+`scaling-helpers-test`, `affine-test`, `composite-traps-test`,
+and `glyph-test` with EE MMI enabled **and** disabled. The packager
+includes these if they exist in the Meson test build. Missing tests
+are marked as failures in full mode. Full mode can be slow on the
+R5900 but avoids another round-trip to investigate obscure pixels.

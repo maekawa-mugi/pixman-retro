@@ -33,7 +33,13 @@ uname -a
 echo "EE_RUN_PLATFORM_END"
 run_it suite "$SUITE"
 if [ -n "$TEST_DIR" ]; then
-    for name in composite combiner-test blitters-test neg-stride-test scaling-test; do
+    required_tests="composite combiner-test blitters-test neg-stride-test scaling-test"
+    extra_tests="pixel-test fetch-test solid-test cover-test scaling-helpers-test affine-test composite-traps-test glyph-test"
+    if [ "${EE_FULL:-0}" = "1" ]; then
+        required_tests="$required_tests $extra_tests"
+        echo "EE_FULL_MODE,enabled"
+    fi
+    for name in $required_tests; do
         if [ -x "$TEST_DIR/$name" ]; then
             run_it "$name:EE" "$TEST_DIR/$name"
             PIXMAN_DISABLE=ee-mmi
