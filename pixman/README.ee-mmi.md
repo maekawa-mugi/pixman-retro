@@ -28,14 +28,21 @@ also removes the backend.
 * `IN` blending from A8 into A8 using two 128-bit loads,
   zero-extend, 16-bit PMULTH, PMFHL.LH, exact Pixman /255 rounding,
   PPACB packing and one 128-bit store per 16 pixels.
-* Nearest-neighbor scaled `OVER` for 32-bit ARGB/ABGR/XRGB/XBGR8888
-  into matching 32-bit destinations, using Pixman's original nearest
-  transform/repeat sampler followed by 64-pixel MMI OVER batches.
-  Reads/writes that share the same image bits stay scalar.
-* Bilinear scaled `OVER` for the same 32-bit format families, using
-  Pixman's `bilinear_interpolation` and fractional weights, with
-  four taps from Pixman's repeat rules. The expensive blend is batched
-  through the EE MMI OVER kernel. Aliased source/destination stays scalar.
+* Nearest-neighbor scaled `OVER` for ARGB/ABGR/XRGB/XBGR8888.
+  When horizontal sampling is unit scale, entirely within source bounds,
+  and source/destination have congruent 16-byte alignment, the renderer
+  now composes directly from the source scanline with EE MMI instead of
+  gathering into 64-pixel scratch. Opaque XRGB/XBGR uses a new quadword
+  alpha-forcing copy kernel. Other scales and repeat edge cases retain
+  the existing MMI-staged pixel gather; aliased images stay scalar.
+* Bilinear scaled `OVER` for the same families. A new exact two-tap
+  MMI kernel handles horizontal-only filtering (zero vertical fraction)
+  and vertical-only filtering (zero horizontal fraction with integer
+  source-X step). The kernel evaluates four pixels per 128-bit quad
+  with Pixman's precise 7-bit/8-bit weight behavior. Arbitrary full
+  four-tap 2D interpolation stays scalar and bit exact, but bulk paths
+  now cache Y-repeat per scanline and reuse X-repeat tests; blending
+  still uses EE MMI. Aliased images stay scalar.
 * Unmasked same-format `SRC` copying of A8 and RGB565/BGR565,
   in addition to the existing 32-bit formats.
 * Direct `pixman_blt` for 8/16/32bpp copying, using EE 128-bit
@@ -183,3 +190,23 @@ staging does not guarantee a speedup on the R5900.
 kernel with 16,000 source/destination random and alpha-edge test cases,
 coverage 0..255, arbitrary A8 byte alignment 0..15, and whole-array input
 and destination-canary checks. The fifth o32 argument is read at 16(sp).
+
+## Scaling fast paths and correctness
+
+`pixman-ee-mmi-scale-asm.S` defines `ee_mmi_nearest_opaque_quads`
+and `ee_mmi_bilinear_lerp_quads`. Bilinear coefficients are 16-bit
+integer weights summing to 256 on every channel and for every pixel.
+The products and sum fit in 16-bit unsigned halfwords (maximum 65280),
+so the /256 rounding is **truncate**, matching Pixman interpolation
+when exactly one axis has zero fractional weight. Arbitrary 2D
+bilinear scaling continues to use `bilinear_interpolation()` to
+avoid introducing rounding errors.
+
+The integrated `ee_test_scale` runs 12,000 separate cases of nearest
+opaque and two-tap interpolation, checking weights 0..256, 0..32 quad
+counts, input immutability, and destination canaries. The API
+benchmark also exercises Nearest unit scale, opaque XRGB, and
+single-axis horizontal/vertical Bilinear, comparing enabled and
+disabled EE backend checksums. **EE toolchain/real PS2 execution and
+performance have not been verified**; the MMI path may not win when
+gather/weight staging or 128-bit multiplies dominate runtime.

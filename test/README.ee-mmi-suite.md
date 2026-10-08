@@ -17,11 +17,11 @@ stdout/stderr, including the exit status:
 echo "EXIT_CODE=$?" >> ee-mmi-results.txt
 ```
 
-The suite combines the pre-existing component-alpha, solid+A8, RGB565, and image+A8
-differential tests, adds scalar-vs-MMI tests of ADD, COPY, FILL, A8 IN,
+The suite combines the pre-existing component-alpha, solid+A8, RGB565, image+A8,
+image+CA and scaling kernel differential tests, adds scalar-vs-MMI tests of ADD, COPY, FILL, A8 IN,
 unmasked 8888 OVER, and 8888-to-565 SRC. All aligned assembly tests
 include zero counts and untouched canaries. The timing section includes fused Solid+CA, Solid+A8, image+A8, RGB565 OVER and 8888->565 SRC and emits
-`BENCH_CSV` records (microseconds and C/MMI speedup) for ten operations
+`BENCH_CSV` records (microseconds and C/MMI speedup) for thirteen operations
 at 64, 256, 1024, 4096, and 16384 bytes.
 
 To collect the **whole Pixman** dispatch/correctness checks too, transfer
@@ -132,3 +132,13 @@ run, all compared for matching checksums. A separate standalone
 `ee-mmi-scale-test.c` verifies direct opaque-copy and 2-tap MMI
 interpolation across all weight endpoints and edge cases, integrated
 into `ee-mmi-suite` and `host-check`.
+
+## Nearest/Bilinear dedicated microbenchmarks
+
+The direct-kernel microbenchmark additionally emits `NEAREST_OPAQUE_COPY`
+and `BILINEAR_2TAP` rows, giving **13 kernels x 5 buffer sizes = 65**
+measurements. These isolate the aligned EE MMI computation from
+coordinate-gather and coefficient-preparation overhead. For real-world
+throughput, prefer the Pixman API benchmark's
+`NEAREST_1X`, `NEAREST_XRGB_1X`, `BILINEAR_X_ONLY`,
+`BILINEAR_Y_ONLY`, and `BILINEAR_OVER` workloads.
