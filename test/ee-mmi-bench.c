@@ -16,12 +16,19 @@ extern void ee_mmi_ca_over_solid_quads(uint32_t *,const uint32_t *,unsigned int,
 extern void ee_mmi_over_solid_a8_quads(uint32_t *,const uint8_t *,unsigned int,const uint32_t *);
 extern void ee_mmi_over_image_a8_quads(uint32_t *,const uint32_t *,const uint8_t *,unsigned int,const uint16_t *);
 extern void ee_mmi_over_image_ca_quads(uint32_t *,const uint32_t *,const uint32_t *,unsigned int,const uint16_t *);
+extern void ee_mmi_nearest_opaque_quads(uint32_t *,const uint32_t *,unsigned int,const uint32_t *);
+extern void ee_mmi_bilinear_lerp_quads(uint32_t *,const uint32_t *,const uint32_t *,const uint16_t *,unsigned int);
 extern void ee_mmi_over_8888_0565_quads(uint16_t *,const uint32_t *,unsigned int,const uint32_t *);
 extern void ee_mmi_8888_to_0565_quads(uint16_t *,const uint32_t *,unsigned int,const uint32_t *);
 #define CAP 32768
 static uint8_t dest[CAP] __attribute__((aligned(16)));
 static uint8_t source[CAP] __attribute__((aligned(16)));
 static uint8_t mask_bytes[CAP] __attribute__((aligned(16)));
+static uint8_t source_second[CAP] __attribute__((aligned(16)));
+/* 64 bytes of two-tap weights per 16 bytes output (4 pixels). */
+static uint16_t two_tap_weights[CAP * 2] __attribute__((aligned(16)));
+static const uint32_t opaque_alpha[4] __attribute__((aligned(16))) =
+{0xff000000u,0xff000000u,0xff000000u,0xff000000u};
 static const uint32_t fill_pattern[4] __attribute__((aligned(16))) =
 {0x395a7b9cu,0x395a7b9cu,0x395a7b9cu,0x395a7b9cu};
 static const uint16_t half[8] __attribute__((aligned(16))) =
@@ -131,6 +138,12 @@ static void run_kernel(int id,int mmi,unsigned int bytes)
         case 10:ee_mmi_over_image_ca_quads((uint32_t *)dest,
                                             (const uint32_t *)source,
                                             (const uint32_t *)mask_bytes,n,over_const);break;
+        case 11:ee_mmi_nearest_opaque_quads((uint32_t *)dest,
+                                            (const uint32_t *)source,n,opaque_alpha);break;
+        case 12:ee_mmi_bilinear_lerp_quads((uint32_t *)dest,
+                                           (const uint32_t *)source,
+                                           (const uint32_t *)source_second,
+                                           two_tap_weights,n);break;
         }
     }
     else
@@ -196,6 +209,27 @@ static void run_kernel(int id,int mmi,unsigned int bytes)
                                                ((uint32_t *)dest)[i],
                                                ((uint32_t *)mask_bytes)[i]);
             break;
+        case 11:
+            for(i=0;i<bytes/4;i++)
+                ((uint32_t *)dest)[i]=((uint32_t *)source)[i]|0xff000000u;
+            break;
+        case 12:
+            for(i=0;i<bytes/4;i++)
+            {
+                uint32_t first=((uint32_t *)source)[i];
+                uint32_t second=((uint32_t *)source_second)[i];
+                uint32_t result=0;
+                unsigned int channel,w=two_tap_weights[(i/4)*32+
+                                        ((i&2)?8:0)+((i&1)?4:0)+16];
+                for(channel=0;channel<32;channel+=8)
+                {
+                    unsigned int a=(first>>channel)&255;
+                    unsigned int b=(second>>channel)&255;
+                    result|=(uint32_t)((a*(256-w)+b*w)>>8)<<channel;
+                }
+                ((uint32_t *)dest)[i]=result;
+            }
+            break;
         }
     }
 }
@@ -213,6 +247,21 @@ static unsigned long measure(int id,int use_mmi,unsigned int bytes,unsigned int 
         source[i]=(uint8_t)((i*73+31)&255);
         dest[i]=(uint8_t)((i*17+49)&255);
         mask_bytes[i]=(uint8_t)((i*103+7)&255);
+        source_second[i]=(uint8_t)((i*191+11)&255);
+    }
+    for(i=0;i<bytes/16;i++)
+    {
+        unsigned int pixel,j;
+        for(pixel=0;pixel<4;pixel++)
+        {
+            unsigned int w=(i*4+pixel)*73%257;
+            unsigned int base=i*32+((pixel&2)?8:0)+((pixel&1)?4:0);
+            for(j=0;j<4;j++)
+            {
+                two_tap_weights[base+j]=(uint16_t)(256-w);
+                two_tap_weights[base+16+j]=(uint16_t)w;
+            }
+        }
     }
     run_kernel(id,use_mmi,bytes); /* warmup, same for both paths */
     start=now_us();
@@ -226,12 +275,13 @@ void ee_mmi_bench_run(void)
     static const char *names[]=
     {"ADD","COPY","FILL","A8_IN","OVER_8888",
      "OVER_SOLID_CA","OVER_SOLID_A8","OVER_IMAGE_A8",
-     "OVER_RGB565","SRC_8888_565","OVER_IMAGE_CA"};
+     "OVER_RGB565","SRC_8888_565","OVER_IMAGE_CA",
+     "NEAREST_OPAQUE_COPY","BILINEAR_2TAP"};
     static const unsigned int sizes[]={64,256,1024,4096,16384};
     unsigned int kind,k,loops,bytes;
     unsigned long ctime,mtime;
     puts("BENCH_CSV,kernel,bytes,iterations,c_us,mmi_us,speedup");
-    for(kind=0;kind<11;kind++)
+    for(kind=0;kind<13;kind++)
         for(k=0;k<5;k++)
         {
             bytes=sizes[k];
