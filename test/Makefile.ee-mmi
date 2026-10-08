@@ -16,7 +16,7 @@ ASM = pixman/pixman-ee-mmi-asm.S \
       pixman/pixman-ee-mmi-565-asm.S \
       pixman/pixman-ee-mmi-scale-asm.S
 OBJS = $(BUILD)/suite.o $(BUILD)/bench.o \
-       $(BUILD)/ca.o $(BUILD)/a8.o $(BUILD)/rgb565.o $(BUILD)/image_a8.o $(BUILD)/image_ca.o $(BUILD)/scale.o
+       $(BUILD)/ca.o $(BUILD)/a8.o $(BUILD)/rgb565.o $(BUILD)/image_a8.o $(BUILD)/image_ca.o $(BUILD)/scale.o $(BUILD)/bilinear4.o
 
 .PHONY: all clean
 all: $(OUT)
@@ -30,6 +30,8 @@ $(BUILD)/ca.o: test/ee-mmi-ca-fused-test.c | $(BUILD)
 	$(EE_CC) $(EE_CFLAGS) -Dmain=ee_test_ca -c $< -o $@
 $(BUILD)/a8.o: test/ee-mmi-a8-fused-test.c | $(BUILD)
 	$(EE_CC) $(EE_CFLAGS) -Dmain=ee_test_solid_a8 -c $< -o $@
+$(BUILD)/bilinear4.o: test/ee-mmi-bilinear-4tap-test.c | $(BUILD)
+	$(EE_CC) $(EE_CFLAGS) -Dmain=ee_test_bilinear4 -c $< -o $@
 $(BUILD)/scale.o: test/ee-mmi-scale-test.c | $(BUILD)
 	$(EE_CC) $(EE_CFLAGS) -Dmain=ee_test_scale -c $< -o $@
 $(BUILD)/image_ca.o: test/ee-mmi-image-ca-fused-test.c | $(BUILD)
@@ -52,7 +54,7 @@ HOST_BUILD ?= .ee-mmi-host-build
 HOST_OBJS = $(HOST_BUILD)/suite.o $(HOST_BUILD)/bench.o \
             $(HOST_BUILD)/ca.o $(HOST_BUILD)/a8.o \
             $(HOST_BUILD)/rgb565.o $(HOST_BUILD)/image_a8.o \
-            $(HOST_BUILD)/image_ca.o $(HOST_BUILD)/scale.o \
+            $(HOST_BUILD)/image_ca.o $(HOST_BUILD)/scale.o $(HOST_BUILD)/bilinear4.o \
             $(HOST_BUILD)/reference.o
 .PHONY: host-check
 host-check: $(HOST_OUT)
@@ -69,6 +71,8 @@ $(HOST_BUILD)/a8.o: test/ee-mmi-a8-fused-test.c | $(HOST_BUILD)
 	$(HOST_CC) $(HOST_CFLAGS) -Dmain=ee_test_solid_a8 -c $< -o $@
 $(HOST_BUILD)/rgb565.o: test/ee-mmi-565-fused-test.c | $(HOST_BUILD)
 	$(HOST_CC) $(HOST_CFLAGS) -Dmain=ee_test_565 -c $< -o $@
+$(HOST_BUILD)/bilinear4.o: test/ee-mmi-bilinear-4tap-test.c | $(HOST_BUILD)
+	$(HOST_CC) $(HOST_CFLAGS) -Dmain=ee_test_bilinear4 -c $< -o $@
 $(HOST_BUILD)/scale.o: test/ee-mmi-scale-test.c | $(HOST_BUILD)
 	$(HOST_CC) $(HOST_CFLAGS) -Dmain=ee_test_scale -c $< -o $@
 $(HOST_BUILD)/image_ca.o: test/ee-mmi-image-ca-fused-test.c | $(HOST_BUILD)

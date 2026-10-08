@@ -169,3 +169,37 @@ void ee_mmi_bilinear_lerp_quads(uint32_t *dst,const uint32_t *first,
         dst[i]=out;
     }
 }
+
+void ee_mmi_bilinear_hsum_quads(uint16_t *out,const uint32_t *first,
+                                 const uint32_t *second,
+                                 const uint16_t *weights,unsigned int quads)
+{
+    unsigned int i,j;
+    for(i=0;i<4*quads;i++)
+    {
+        unsigned int off=(i/4)*32+((i&2)?8:0)+((i&1)?4:0);
+        unsigned int w0=weights[off],w1=weights[off+16];
+        for(j=0;j<4;j++)
+        {
+            unsigned int sh=8*j;
+            unsigned int a=(first[i]>>sh)&255,b=(second[i]>>sh)&255;
+            out[i*4+j]=(uint16_t)(a*w0+b*w1);
+        }
+    }
+}
+void ee_mmi_bilinear_vfinish_quads(uint32_t *out,const uint16_t *top,
+                                   const uint16_t *bottom,
+                                   const uint16_t *weights,unsigned int quads)
+{
+    unsigned int i,j,w0=weights[0],w1=weights[8];
+    for(i=0;i<4*quads;i++)
+    {
+        uint32_t value=0;
+        for(j=0;j<4;j++)
+        {
+            unsigned int ch=(top[i*4+j]*w0+bottom[i*4+j]*w1)>>16;
+            value|=(uint32_t)ch<<(j*8);
+        }
+        out[i]=value;
+    }
+}
