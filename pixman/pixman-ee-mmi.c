@@ -326,6 +326,67 @@ ee_mmi_composite_src_8888 (pixman_implementation_t *imp,
     }
 }
 
+/* The public pixman_blt hook also benefits from EE 128-bit transfers.
+ * Strides are in 32-bit words. Source and destination pixel widths
+ * must match, and only byte-addressable A8/565/8888 formats are used.
+ */
+static pixman_bool_t
+ee_mmi_blt (pixman_implementation_t *imp,
+            uint32_t *src_bits, uint32_t *dst_bits,
+            int src_stride, int dst_stride, int src_bpp, int dst_bpp,
+            int src_x, int src_y, int dest_x, int dest_y,
+            int width, int height)
+{
+    uint8_t *src_line, *dst_line;
+    ptrdiff_t sstride, dstride;
+    size_t bytes;
+    int row, start, end, step;
+
+    if (src_bpp != dst_bpp ||
+        (src_bpp != 8 && src_bpp != 16 && src_bpp != 32))
+        return FALSE;
+
+    if (width <= 0 || height <= 0)
+        return TRUE;
+
+    /* Fallback for complex overlapping views with different strides.
+     * The common same-buffer case has defined memmove semantics.
+     */
+    if (src_bits == dst_bits && src_stride != dst_stride)
+        return FALSE;
+
+    bytes = (size_t)width * (size_t)(src_bpp / 8);
+    sstride = (ptrdiff_t)src_stride * 4;
+    dstride = (ptrdiff_t)dst_stride * 4;
+    src_line = (uint8_t *)src_bits + (ptrdiff_t)src_y * sstride +
+               (ptrdiff_t)src_x * (src_bpp / 8);
+    dst_line = (uint8_t *)dst_bits + (ptrdiff_t)dest_y * dstride +
+               (ptrdiff_t)dest_x * (dst_bpp / 8);
+
+    /* If source and target are the same bits image and destination
+     * starts at a later logical row, copying bottom-to-top protects
+     * source rows from an earlier write (regardless of stride sign).
+     */
+    start = 0;
+    end = height;
+    step = 1;
+    if (src_bits == dst_bits && dest_y > src_y)
+    {
+        start = height - 1;
+        end = -1;
+        step = -1;
+    }
+
+    for (row = start; row != end; row += step)
+    {
+        uint8_t *src = src_line + (ptrdiff_t)row * sstride;
+        uint8_t *dst = dst_line + (ptrdiff_t)row * dstride;
+        copy_bytes (dst, src, bytes);
+    }
+
+    return TRUE;
+}
+
 static pixman_bool_t
 ee_mmi_fill (pixman_implementation_t *imp,
              uint32_t *bits, int stride, int bpp,
@@ -459,6 +520,9 @@ extern void ee_mmi_composite_nearest_over_8888 (pixman_implementation_t *,
                                                 pixman_composite_info_t *);
 extern void ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *,
                                                  pixman_composite_info_t *);
+extern void ee_mmi_combine_over_u (pixman_implementation_t *, pixman_op_t,
+                                   uint32_t *, const uint32_t *,
+                                   const uint32_t *, int);
 
 /* Match exactly the existing Pixman scaled-nearest fast path requirements.
  * This permits all repeat modes, using Pixman's own coordinate handling.
@@ -613,7 +677,11 @@ _pixman_implementation_create_ee_mmi (pixman_implementation_t *fallback)
         _pixman_implementation_create (fallback, ee_mmi_fast_paths);
 
     if (imp)
+    {
+        imp->blt = ee_mmi_blt;
         imp->fill = ee_mmi_fill;
+        imp->combine_32[PIXMAN_OP_OVER] = ee_mmi_combine_over_u;
+    }
 
     return imp;
 }

@@ -38,6 +38,11 @@ also removes the backend.
   through the EE MMI OVER kernel. Aliased source/destination stays scalar.
 * Unmasked same-format `SRC` copying of A8 and RGB565/BGR565,
   in addition to the existing 32-bit formats.
+* Direct `pixman_blt` for 8/16/32bpp copying, using EE 128-bit
+  memory transfers when alignment and size permit. Same-buffer
+  vertical overlap copies rows in the correct direction.
+* Generic 32-bit unified-alpha `OVER` combiner hook, allowing
+  MMI blending even when no specialized fast path matches.
 * `SRC`: 32-bit same-format copies for ARGB8888, ABGR8888,
   XRGB8888, and XBGR8888.
 * 8bpp A8, 16bpp RGB565/BGR565, and 32bpp solid fills through Pixman's
@@ -99,6 +104,10 @@ Recommended checks:
   on actual PS2 hardware or an EE-capable emulator.
 * Pixel values near 0 and 255; 1-, 2-, 3-, 4-, and 16-pixel widths.
 * OVER with alpha 0, 1, 127, 254 and 255 and mixed transparency.
+* Direct pixman_blt: byte/pixel alignment, positive/negative stride,
+  identical source/destination images, horizontal and vertical overlap.
+* Generic 32-bit OVER combiner with NULL and unified-alpha masks,
+  transparent source and mask pixels, and overlapping scanlines.
 * RGB565 conversion with source and destination independently offset by
   0 through 15 bytes; confirm color channel order against the C fast path.
 * Solid+A8 mask with all coverage values 0..255, transparent and opaque

@@ -599,3 +599,90 @@ ee_mmi_composite_over_solid_8888 (pixman_implementation_t *imp,
         dst_line += dst_stride;
     }
 }
+
+
+/*
+ * Accelerate generic 32-bit unified-alpha OVER in the iterator combiner.
+ *
+ * This is used for uncommon image formats and transformations where none
+ * of the specialized Pixman fast paths match. It preserves Pixman's
+ * exact (S + D * (255 - Sa)) premultiplied composition and its mask
+ * multiplication rounding.
+ */
+void
+ee_mmi_combine_over_u (pixman_implementation_t *imp, pixman_op_t op,
+                       uint32_t *dst, const uint32_t *src,
+                       const uint32_t *mask, int width)
+{
+    uint32_t staged[64] __attribute__((aligned(16)));
+    size_t n = width > 0 ? (size_t)width : 0;
+    size_t count, i;
+
+    if (!mask)
+    {
+        over_span (dst, src, n);
+        return;
+    }
+
+    if (n < 16 ||
+        spans_overlap (src, n * 4, dst, n * 4) ||
+        spans_overlap (mask, n * 4, dst, n * 4))
+    {
+        while (n--)
+        {
+            uint32_t m = (*mask++) >> 24;
+            uint32_t s = *src++;
+
+            if (m == 255)
+            {
+                over_pixel (dst, s);
+            }
+            else if (m && s)
+            {
+                UN8x4_MUL_UN8 (s, m);
+                over_pixel (dst, s);
+            }
+            ++dst;
+        }
+        return;
+    }
+
+    while (n && ((uintptr_t)dst & 15))
+    {
+        uint32_t s = *src++;
+        uint32_t m = (*mask++) >> 24;
+        if (m != 255)
+            UN8x4_MUL_UN8 (s, m);
+        over_pixel (dst++, s);
+        --n;
+    }
+
+    while (n >= 4)
+    {
+        count = n >= 64 ? 64 : (n & ~(size_t)3);
+        for (i = 0; i < count; ++i)
+        {
+            uint32_t s = src[i];
+            uint32_t m = mask[i] >> 24;
+            if (m != 255)
+                UN8x4_MUL_UN8 (s, m);
+            staged[i] = s;
+        }
+
+        ee_mmi_over_quads (dst, staged, (unsigned int)(count / 4),
+                           over_constants);
+        dst += count;
+        src += count;
+        mask += count;
+        n -= count;
+    }
+
+    while (n--)
+    {
+        uint32_t s = *src++;
+        uint32_t m = (*mask++) >> 24;
+        if (m != 255)
+            UN8x4_MUL_UN8 (s, m);
+        over_pixel (dst++, s);
+    }
+}
