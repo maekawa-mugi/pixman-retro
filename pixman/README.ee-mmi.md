@@ -28,10 +28,15 @@ also removes the backend.
 * `SRC`: 32-bit same-format copies for ARGB8888, ABGR8888,
   XRGB8888, and XBGR8888.
 * 32bpp solid fills through Pixman's `fill` implementation hook.
+* Premultiplied-alpha `OVER` for ARGB8888 / ABGR8888 to matching 32-bit
+  destinations (including the XRGB8888/XBGR8888 destination variants).
+* `SRC` from ARGB8888 / XRGB8888 to RGB565, and from ABGR8888 /
+  XBGR8888 to BGR565.
 
 All other operations continue through the normal Pixman fallback chain.
-In particular, `OVER`, component-alpha, bilinear scaling, and RGB565
-conversion are **not** accelerated in this initial patch.
+Masked `OVER`, component-alpha, bilinear scaling, and RGB565 `OVER`
+are **not** accelerated. Only unmasked 32-bit `OVER` and the `SRC`
+conversion combinations above have MMI paths.
 
 ## Alignment and correctness
 
@@ -42,7 +47,11 @@ have incompatible alignments, small spans use C instead. Overlapping ADD
 spans use forward scalar processing and overlapping SRC spans use memmove.
 
 The ADD kernel uses `PADDUB` saturating 8-bit addition, matching Pixman's
-channel-wise ADD arithmetic exactly. The implementation never assumes that
+channel-wise ADD arithmetic exactly. The OVER kernel unpacks destination
+bytes, multiplies by repeated `255 - src_alpha` with `PMULTH`, extracts
+eight low product halves with `PMFHL.LH`, performs Pixman's exact
+`(x + 128 + ((x + 128) >> 8)) >> 8` rounded division by 255, then
+adds premultiplied source channels with `PADDUB`. The implementation never assumes that
 the image row stride is positive or that rows begin 16-byte aligned.
 
 ## Validation still required
@@ -56,6 +65,9 @@ Recommended checks:
 * `test/composite.c`, `test/combiner-test.c`, `test/blitters-test.c`
   on actual PS2 hardware or an EE-capable emulator.
 * Pixel values near 0 and 255; 1-, 2-, 3-, 4-, and 16-pixel widths.
+* OVER with alpha 0, 1, 127, 254 and 255 and mixed transparency.
+* RGB565 conversion with source and destination independently offset by
+  0 through 15 bytes; confirm color channel order against the C fast path.
 * Src/Dst alignment offsets 0..15, odd and negative strides, clipped regions.
 * Both identical pointers and partially overlapping buffers.
 * Sizes and memory layouts representative of the actual application.

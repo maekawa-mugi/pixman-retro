@@ -243,8 +243,32 @@ ee_mmi_fill (pixman_implementation_t *imp,
     return TRUE;
 }
 
+/* Additional EE MMI composite entry points (separate translation unit). */
+extern void ee_mmi_composite_over_8888 (pixman_implementation_t *,
+                                         pixman_composite_info_t *);
+extern void ee_mmi_composite_src_8888_0565 (pixman_implementation_t *,
+                                             pixman_composite_info_t *);
+
 static const pixman_fast_path_t ee_mmi_fast_paths[] =
 {
+    PIXMAN_STD_FAST_PATH (OVER, a8r8g8b8, null, a8r8g8b8,
+                          ee_mmi_composite_over_8888),
+    PIXMAN_STD_FAST_PATH (OVER, a8r8g8b8, null, x8r8g8b8,
+                          ee_mmi_composite_over_8888),
+    PIXMAN_STD_FAST_PATH (OVER, a8b8g8r8, null, a8b8g8r8,
+                          ee_mmi_composite_over_8888),
+    PIXMAN_STD_FAST_PATH (OVER, a8b8g8r8, null, x8b8g8r8,
+                          ee_mmi_composite_over_8888),
+
+    PIXMAN_STD_FAST_PATH (SRC, a8r8g8b8, null, r5g6b5,
+                          ee_mmi_composite_src_8888_0565),
+    PIXMAN_STD_FAST_PATH (SRC, x8r8g8b8, null, r5g6b5,
+                          ee_mmi_composite_src_8888_0565),
+    PIXMAN_STD_FAST_PATH (SRC, a8b8g8r8, null, b5g6r5,
+                          ee_mmi_composite_src_8888_0565),
+    PIXMAN_STD_FAST_PATH (SRC, x8b8g8r8, null, b5g6r5,
+                          ee_mmi_composite_src_8888_0565),
+
     PIXMAN_STD_FAST_PATH (ADD, a8r8g8b8, null, a8r8g8b8,
                           ee_mmi_composite_add_8888),
     PIXMAN_STD_FAST_PATH (ADD, a8b8g8r8, null, a8b8g8r8,
