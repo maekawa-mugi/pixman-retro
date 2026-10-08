@@ -37,6 +37,16 @@ extern void ee_mmi_bilinear_lerp_quads (uint32_t *dst,
                                          const uint32_t *second,
                                          const uint16_t *weights,
                                          unsigned int blocks);
+extern void ee_mmi_bilinear_hsum_quads (uint16_t *numerators,
+                                        const uint32_t *first,
+                                        const uint32_t *second,
+                                        const uint16_t *weights,
+                                        unsigned int blocks);
+extern void ee_mmi_bilinear_vfinish_quads (uint32_t *dst,
+                                           const uint16_t *top,
+                                           const uint16_t *bottom,
+                                           const uint16_t *weights,
+                                           unsigned int blocks);
 
 static const uint16_t bilinear_constants[16] __attribute__((aligned(16))) =
 {
@@ -198,6 +208,13 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
     uint32_t tap_first[16] __attribute__((aligned(16)));
     uint32_t tap_second[16] __attribute__((aligned(16)));
     uint16_t tap_weights[128] __attribute__((aligned(16)));
+    uint32_t tl[16] __attribute__((aligned(16)));
+    uint32_t tr[16] __attribute__((aligned(16)));
+    uint32_t bl[16] __attribute__((aligned(16)));
+    uint32_t br[16] __attribute__((aligned(16)));
+    uint16_t numerator_top[64] __attribute__((aligned(16)));
+    uint16_t numerator_bottom[64] __attribute__((aligned(16)));
+    uint16_t vertical_weights[24] __attribute__((aligned(16)));
 
     PIXMAN_IMAGE_GET_LINE (src_image, 0, 0, uint32_t,
                            src_stride, src_base, 1);
@@ -283,11 +300,83 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
                 --n;
             }
 
+            /* The /256 horizontal numerators feed an exact /65536
+             * MMI vertical pass. Only run this three-kernel path on
+             * wide spans; short spans avoid the staging/setup cost.
+             */
+            if (!two_tap)
+            {
+                int j;
+                for (j = 0; j < 8; ++j)
+                {
+                    vertical_weights[j] = (uint16_t)(256 - 2 * disty);
+                    vertical_weights[j + 8] = (uint16_t)(2 * disty);
+                    vertical_weights[j + 16] = 255;
+                }
+            }
+
             while (n >= 4)
             {
                 size_t count;
 
-                if (two_tap)
+                if (!two_tap && n >= 64)
+                {
+                    /* Four independent tap arrays with per-pixel X
+                     * weights. Vertical fraction is shared by row.
+                     * This preserves all 16 bits of the horizontal
+                     * numerator until the exact MMI vertical finish.
+                     */
+                    count = 16;
+                    for (i = 0; i < (int)count; ++i)
+                    {
+                        int x1 = pixman_fixed_to_int (vx);
+                        int dx = pixman_fixed_to_bilinear_weight (vx);
+                        int x2 = dx ? x1 + 1 : x1;
+                        pixman_bool_t valid1 =
+                            repeat (repeat_mode, &x1, src_width);
+                        pixman_bool_t valid2;
+                        size_t index = ((size_t)i / 4) * 32 +
+                                       ((i & 2) ? 8 : 0) +
+                                       ((i & 1) ? 4 : 0);
+                        unsigned int w = (unsigned int)dx << 1;
+                        int j;
+
+                        if (dx)
+                            valid2 = repeat (repeat_mode, &x2, src_width);
+                        else
+                        {
+                            valid2 = valid1;
+                            x2 = x1;
+                        }
+
+                        tl[i] = bilinear_row_pixel (
+                            top, x1, valid1, source_opaque);
+                        tr[i] = bilinear_row_pixel (
+                            top, x2, valid2, source_opaque);
+                        bl[i] = bilinear_row_pixel (
+                            bottom, x1, valid1, source_opaque);
+                        br[i] = bilinear_row_pixel (
+                            bottom, x2, valid2, source_opaque);
+
+                        for (j = 0; j < 4; ++j)
+                        {
+                            tap_weights[index + j] = (uint16_t)(256 - w);
+                            tap_weights[index + 16 + j] = (uint16_t)w;
+                        }
+                        vx += unit_x;
+                    }
+
+                    ee_mmi_bilinear_hsum_quads (
+                        numerator_top, tl, tr, tap_weights,
+                        (unsigned int)(count / 4));
+                    ee_mmi_bilinear_hsum_quads (
+                        numerator_bottom, bl, br, tap_weights,
+                        (unsigned int)(count / 4));
+                    ee_mmi_bilinear_vfinish_quads (
+                        staged, numerator_top, numerator_bottom,
+                        vertical_weights, (unsigned int)(count / 4));
+                }
+                else if (two_tap)
                 {
                     /* At most four quads: 2 x 64B taps + 256B
                      * coefficients, fitting in EE's small D-cache.
