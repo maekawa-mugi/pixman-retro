@@ -107,6 +107,7 @@ enum {
     B_BILINEAR_X_ONLY, B_BILINEAR_Y_ONLY,
     B_NEAREST_INTERIOR, B_NEAREST_EDGE,
     B_BILINEAR_4TAP_WIDE, B_BILINEAR_4TAP_EDGE,
+    B_OVER565_UNALIGNED, B_SOLID_OVER,
     B_COUNT
 };
 static const char *const names[B_COUNT]={
@@ -117,7 +118,8 @@ static const char *const names[B_COUNT]={
     "NEAREST_1X","NEAREST_XRGB_1X",
     "BILINEAR_X_ONLY","BILINEAR_Y_ONLY",
     "NEAREST_INTERIOR","NEAREST_EDGE",
-    "BILINEAR_4TAP_WIDE","BILINEAR_4TAP_EDGE"
+    "BILINEAR_4TAP_WIDE","BILINEAR_4TAP_EDGE",
+    "OVER_RGB565_UNALIGNED","OVER_SOLID_UNMASKED"
 };
 static int measure_case(int kind,int width,int height)
 {
@@ -135,17 +137,23 @@ static int measure_case(int kind,int width,int height)
     uint32_t hash;
     int side;
     unsigned int calls_before;
-    if(kind==B_OVER565 || kind==B_SRC565)
+    if(kind==B_OVER565 || kind==B_SRC565 || kind==B_OVER565_UNALIGNED)
         format=1;
     else if(kind==B_IN_A8)
         format=2;
 
     if(kind!=B_BLT && kind!=B_FILL)
     {
-        if(kind==B_SOLID_A8 || kind==B_SOLID_CA)
+        if(kind==B_SOLID_A8 || kind==B_SOLID_CA || kind==B_SOLID_OVER)
             src=pixman_image_create_solid_fill(&solid_color);
         else if(kind==B_IN_A8)
             src=pixman_image_create_bits(PIXMAN_a8,W,H,(uint32_t *)src8,W);
+        else if(kind==B_OVER565_UNALIGNED)
+            /* Shift the source by one 8888 pixel while retaining W*4
+             * stride. W-1 width avoids a read beyond the last row.
+             */
+            src=pixman_image_create_bits(PIXMAN_a8r8g8b8,
+                                          W-1,H,src32+1,W*4);
         else
             src=pixman_image_create_bits(
                 kind==B_NEAREST_XRGB_1X ? PIXMAN_x8r8g8b8 :
@@ -160,7 +168,7 @@ static int measure_case(int kind,int width,int height)
             if(mask) pixman_image_set_component_alpha(mask,1);
         }
 
-        if(kind==B_OVER565 || kind==B_SRC565)
+        if(kind==B_OVER565 || kind==B_SRC565 || kind==B_OVER565_UNALIGNED)
             dst=pixman_image_create_bits(PIXMAN_r5g6b5,W,H,
                                           (uint32_t *)dst565,W*2);
         else if(kind==B_IN_A8)
@@ -306,11 +314,19 @@ static int measure_case(int kind,int width,int height)
                    wrong_side[side]?'X':'O',(unsigned long)hash,mmi_calls[side]);
         }
     }
+    /* No silent pass if the API benchmark misses its intended
+     * accelerated path. Tiny workloads legitimately use scalar tails.
+     */
     if(width>=64 &&
-       (kind==B_NEAREST_INTERIOR || kind==B_BILINEAR_4TAP_WIDE) &&
+       (kind==B_NEAREST_INTERIOR || kind==B_BILINEAR_4TAP_WIDE ||
+        kind==B_OVER565_UNALIGNED || kind==B_SOLID_OVER) &&
        mmi_calls[0]==0)
-        printf("PIXMAN_PATH_WARNING,%s,%d,%d,MMI_not_reached\n",
+    {
+        printf("PIXMAN_PATH_FAIL,%s,%d,%d,MMI_not_reached\n",
                names[kind],width,height);
+        if(!wrong_side[0]) ++bad_rows[0];
+        wrong_side[0]=1;
+    }
     ++completed;
     ps2_progress_record(times[0],times[1],wrong_side[0],wrong_side[1]);
     fflush(stdout);
