@@ -301,11 +301,11 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
                 --n;
             }
 
-            /* Decide the 4-tap policy once after alignment peeling.
+            /* Decide the 4-tap policy once using the original row width.
              * Re-testing n >= 64 inside the batch loop accelerated only
-             * the first 16 pixels of a 64-pixel row.
+             * the first 16 pixels of a 64-pixel row; peeling also reduced n below 64.
              */
-            wide_four_tap = !two_tap && n >= 64;
+            wide_four_tap = !two_tap && width >= 64;
             if (wide_four_tap)
             {
                 int j;
