@@ -99,7 +99,10 @@ _pixman_implementation_lookup_composite (pixman_implementation_t  *toplevel,
 	 * us from selecting an overly general fast path
 	 * when a more specific one would work.
 	 */
-	if (info->op == op			&&
+	/* A/B testing can switch implementation chains in one process. */
+	if (cache->cache[i].imp &&
+	    cache->cache[i].imp->toplevel == toplevel &&
+	    info->op == op			&&
 	    info->src_format == src_format	&&
 	    info->mask_format == mask_format	&&
 	    info->dest_format == dest_format	&&

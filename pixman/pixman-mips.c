@@ -103,5 +103,13 @@ _pixman_mips_get_implementations (pixman_implementation_t *imp)
     }
 #endif
 
+#ifdef USE_EE_MMI
+    /* PS2 EE provides 128-bit MMI, unrelated to Loongson MMI or DSPr2.
+     * Its support is determined at build time by an assembler probe.
+     */
+    if (!_pixman_disabled ("ee-mmi"))
+        imp = _pixman_implementation_create_ee_mmi (imp);
+#endif
+
     return imp;
 }

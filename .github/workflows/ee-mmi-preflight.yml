@@ -1,0 +1,39 @@
+name: EE MMI test suite host preflight
+
+on:
+  push:
+    branches:
+      - 'feat/ps2-ee-mmi-*'
+      - 'mmi'
+    paths:
+      - 'pixman/**'
+      - 'test/**'
+      - '.github/workflows/ee-mmi-preflight.yml'
+  pull_request:
+    paths:
+      - 'pixman/**'
+      - 'test/**'
+      - '.github/workflows/ee-mmi-preflight.yml'
+
+jobs:
+  host-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run all EE MMI differential tests against portable C backend
+        run: make -f test/Makefile.ee-mmi host-check
+      - name: Exercise benchmark output format without EE assembly
+        run: ./ee-mmi-host-suite --bench-only
+      - name: Compile and run A/B/C latency test plus failure injection
+        run: make -f test/Makefile.ee-mmi latency-host-check
+      - name: All seven non-scaling throughput families and negative control
+        run: make -f test/Makefile.ee-mmi throughput-host-check
+      - name: Validate v5 patch Python syntax
+        run: python3 -m py_compile test/ps2/upgrade-v5-harness.py test/ps2/upgrade-v5-throughput.py
+
+      - name: Integrated v5 regression and negative controls
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build
+          bash test/ps2/verify-host.sh

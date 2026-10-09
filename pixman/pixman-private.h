@@ -655,6 +655,11 @@ pixman_implementation_t *
 _pixman_implementation_create_arm_neon (pixman_implementation_t *fallback);
 #endif
 
+#ifdef USE_EE_MMI
+pixman_implementation_t *
+_pixman_implementation_create_ee_mmi (pixman_implementation_t *fallback);
+#endif
+
 #ifdef USE_MIPS_DSPR2
 pixman_implementation_t *
 _pixman_implementation_create_mips_dspr2 (pixman_implementation_t *fallback);
