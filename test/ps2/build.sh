@@ -86,13 +86,12 @@ queue_compile "${flags[@]}" -std=gnu99 -DHAVE_CONFIG_H \
     "-I$output_dir/library/pixman" "-I$source_dir/pixman" \
     -c "$source_dir/test/ps2/benchmark.c" -o "$output_dir/benchmark.o"
 queue_compile "${flags[@]}" -std=gnu99 -c "$source_dir/test/ps2/progress.c" -o "$output_dir/progress.o"
-queue_compile "${flags[@]}" -std=gnu99 -c "$source_dir/test/ps2/spr-bench.c" -o "$output_dir/spr-bench.o"
 queue_compile "${flags[@]}" -std=gnu99 -c "$source_dir/test/ps2/latency-variants-test.c" -o "$output_dir/latency-variants-test.o"
 queue_compile "${flags[@]}" -c "$source_dir/test/ps2/latency-variants-asm.S" -o "$output_dir/latency-variants-asm.o"
 queue_compile "${flags[@]}" -std=gnu99 -c "$source_dir/test/ps2/throughput-variants-test.c" -o "$output_dir/throughput-variants-test.o"
 queue_compile "${flags[@]}" -c "$source_dir/test/ps2/throughput-core-asm.S" -o "$output_dir/throughput-core-asm.o"
 queue_compile "${flags[@]}" -c "$source_dir/test/ps2/throughput-blend-asm.S" -o "$output_dir/throughput-blend-asm.o"
-suite_objects=("$output_dir/benchmark.o" "$output_dir/progress.o" "$output_dir/spr-bench.o" "$output_dir/latency-variants-test.o" "$output_dir/latency-variants-asm.o" "$output_dir/throughput-variants-test.o" "$output_dir/throughput-core-asm.o" "$output_dir/throughput-blend-asm.o")
+suite_objects=("$output_dir/benchmark.o" "$output_dir/progress.o" "$output_dir/latency-variants-test.o" "$output_dir/latency-variants-asm.o" "$output_dir/throughput-variants-test.o" "$output_dir/throughput-core-asm.o" "$output_dir/throughput-blend-asm.o")
 model_flags=()
 for name in add copy fill in_a8 over 8888_to_0565 ca_over ca_over_solid over_solid_a8 over_image_a8 over_image_ca over_8888_0565 nearest_opaque bilinear_lerp bilinear_hsum bilinear_vfinish; do
     model_flags+=("-Dee_mmi_${name}_quads=b_ee_mmi_${name}_quads")

@@ -1,18 +1,5 @@
 # Pixman PS2 全PR入りビルド v5 — 2026-10-09
 
-## EE 16 KiB scratchpad MMI placement experiments
-
-The normal pixman_mmi.elf now benchmarks three real assembler kernels:
-ee_mmi_copy_quads, ee_mmi_add_quads, ee_mmi_fill_quads.
-Every 64/256/1024/4096/8192-byte workload compares RAM, SPR source,
-SPR destination, both, and copies into/out of SPR inside the timed
-loop. Full outputs are compared against the same RAM-only MMI kernel
-before and after six rotated timing samples. These are not scalar
-baseline comparisons. Detailed stdout: PIXMAN_SPR and
-PIXMAN_SPR_RESULT. The original 17 correctness rows remain unchanged.
-No production fast-path selection or DMA is affected.
-
-
 GitHubで確認できたPRは #1 の1件。最新HEAD b3e09a849a91acb126daa3316adc4279f2135d72 を使用。
 master f227dcbe57e8fcfb5174ffd7eb55a69b6692d512 はこのPRの祖先で、masterの変更も含まれます。
 https://github.com/maekawa-mugi/pixman-retro/pull/1
