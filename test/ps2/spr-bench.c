@@ -3,6 +3,7 @@
  * Owns 0x70000000..0x70003fff (16 KiB SPR) exclusively. No DMA.
  */
 #include "progress.h"
+#include <debug.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -79,6 +80,7 @@ int ps2_spr_benchmark(void)
 {
     static const unsigned lengths[] = {64u,256u,1024u,4096u,8192u};
     uint64_t raw[5][SPR_SAMPLES], med[5];
+    double summary[3]={0,0,0};
     unsigned k, z, m, s, step, i;
     unsigned pass = 0;
     for (i = 0; i < SPR_HALF; ++i) {
@@ -117,8 +119,15 @@ int ps2_spr_benchmark(void)
                        (unsigned long long)med[m],
                        (double)med[0]/(double)med[m]);
             }
+            if (bytes == 4096u)
+                summary[k]=(double)med[0]/(double)med[3];
             ++pass;
         }
+    /* Row 22 is not used by the existing 17-group correctness grid. */
+    scr_setXY(0,22);
+    scr_setfontcolor(0x00ffffff);
+    scr_printf("SPR RAM/both @4096  COPY:%4.2fx ADD:%4.2fx FILL:%4.2fx",
+               summary[0],summary[1],summary[2]);
     printf("PIXMAN_SPR_RESULT,PASS,cases=%u,sink=%lu\n",
            pass,(unsigned long)escape_sink);
     fflush(stdout);
