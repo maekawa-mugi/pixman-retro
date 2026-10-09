@@ -416,6 +416,7 @@ unsigned int ps2_mmi_call_count(void)
 extern int ee_kernel_suite_main(int argc, char **argv);
 extern int ps2_latency_run(void);
 extern int ps2_throughput_run(void);
+extern int ps2_spr_benchmark(void);
 
 int main(void)
 {
@@ -435,6 +436,8 @@ int main(void)
     /* A/B/C experiment does not alter production kernel dispatch. */
     failures += ps2_latency_run();
     failures += ps2_throughput_run();
+    /* Same-ELF, benchmark-only SPR placement experiments. */
+    failures += ps2_spr_benchmark();
     /* Keep two entirely separate chains: reference always uses C combiners. */
     reference = _pixman_implementation_create_general();
     _pixman_implementation_create_noop(_pixman_implementation_create_fast_path(reference));
