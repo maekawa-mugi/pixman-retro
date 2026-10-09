@@ -422,6 +422,7 @@ int main(void)
     int failures = 0, i;
 #ifndef PS2_TEST_HOST
     init_scr();
+    scr_setCursor(0); /* no blinking white cursor block */
 #endif
     ps2_progress_init();
     {
