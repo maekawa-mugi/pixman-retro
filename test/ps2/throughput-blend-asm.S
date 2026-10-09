@@ -636,3 +636,57 @@ ee_mmi_over_8888_0565_u2_quads:
     jr      $ra
      nop
     .end ee_mmi_over_8888_0565_u2_quads
+
+/* Experimental translucent solid OVER, four ARGB8888 pixels per quad.
+ * a0=aligned dst, a1=aligned repeated-solid quad, a2=quads,
+ * a3=aligned [8*255,8*128] halfword constants.
+ * The solid quad and inverse-alpha vectors are loaded/calculated ONCE,
+ * not per block. Equivalent to baseline ee_mmi_over_quads on a 4x
+ * repeated source. The caller supplies non-overlapping scratch source.
+ * No callee-saved registers, no zero-count memory access.
+ */
+    .align 2
+    .globl ee_mmi_over_solid_direct_quads
+    .ent ee_mmi_over_solid_direct_quads
+ee_mmi_over_solid_direct_quads:
+    beqz    $a2, 2f
+     nop
+    lq      $v0, 0($a3)
+    lq      $v1, 16($a3)
+    lq      $8, 0($a1)
+    psrlw   $10, $8, 24
+    pextlw  $11, $10, $10
+    pextuw  $12, $10, $10
+    psllw   $24, $11, 16
+    por     $11, $11, $24
+    pxor    $11, $11, $v0
+    psllw   $24, $12, 16
+    por     $12, $12, $24
+    pxor    $12, $12, $v0
+1:
+    lq      $9, 0($a0)
+    pextlb  $13, $zero, $9
+    pextub  $14, $zero, $9
+    pmulth  $15, $13, $11
+    pmfhl.lh $15
+    padduh  $15, $15, $v1
+    psrlh   $24, $15, 8
+    padduh  $15, $15, $24
+    psrlh   $25, $15, 8
+    pmulth  $15, $14, $12
+    pmfhl.lh $15
+    padduh  $15, $15, $v1
+    psrlh   $24, $15, 8
+    padduh  $15, $15, $24
+    psrlh   $15, $15, 8
+    ppacb   $15, $15, $25
+    paddub  $15, $8, $15
+    sq      $15, 0($a0)
+    addiu   $a0, $a0, 16
+    addiu   $a2, $a2, -1
+    bnez    $a2, 1b
+     nop
+2:
+    jr      $ra
+     nop
+    .end ee_mmi_over_solid_direct_quads
