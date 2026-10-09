@@ -106,13 +106,16 @@ latency-host-check: $(LATENCY_HOST_OUT)
 	@echo 'LATENCY_NEGATIVE_CONTROL,PASS'
 
 # Native all-six-family throughput differential preflight.
+# PS2SDK's GCC treats mismatched pointer-type ?: expressions as errors.
+# Catch them even in a native-only preflight.
+THROUGHPUT_EXTRA_CFLAGS = -Werror=incompatible-pointer-types
 THROUGHPUT_HOST_OUT ?= ee-mmi-throughput-host
 .PHONY: throughput-host-check
 $(THROUGHPUT_HOST_OUT): test/ps2/throughput-variants-test.c \
     test/ps2/throughput-variants-host.c \
     test/ps2/throughput-standalone-main.c \
     test/ee-mmi-host-reference.c test/ps2/progress.h
-	$(HOST_CC) $(HOST_CFLAGS) -DPS2_TEST_HOST -Itest/ps2 \
+	$(HOST_CC) $(HOST_CFLAGS) $(THROUGHPUT_EXTRA_CFLAGS) -DPS2_TEST_HOST -Itest/ps2 \
 	  test/ps2/throughput-variants-test.c \
 	  test/ps2/throughput-variants-host.c \
 	  test/ps2/throughput-standalone-main.c \

@@ -34,6 +34,10 @@ for spec in 'ee-mmi-suite:ee_kernel_suite_main' 'ee-mmi-ca-fused-test:ee_test_ca
 done
 "$cc" "${flags[@]}" -c "$root/test/ee-mmi-bench.c" -o "$out/ee-mmi-bench.o"
 suite_objects+=("$out/ee-mmi-bench.o")
+# Mirror the PS2SDK cross compiler's strict pointer-type diagnostic:
+# a type-mismatched ?: expression must fail the host preflight as well.
+"$cc" "${flags[@]}" -Werror=incompatible-pointer-types -fsyntax-only \
+    "$root/test/ps2/throughput-variants-test.c"
 "$cc" "${flags[@]}" "$root/test/ps2/main.c" "$root/test/ps2/benchmark.c" "$root/test/ps2/progress.c" "$root/test/ee-mmi-host-reference.c" \
     "$root/test/ps2/latency-variants-test.c" "$root/test/ps2/latency-variants-host.c" \
     "$root/test/ps2/throughput-variants-test.c" "$root/test/ps2/throughput-variants-host.c" \
