@@ -115,7 +115,9 @@ static const void *constants(int kind){
 }
 static void invoke(int kind,unsigned int variant,unsigned int blocks) {
     if(kind<=K_FILL)
-        basic[kind][variant](dest,kind==K_FILL?fill_pattern:src,blocks);
+        basic[kind][variant](dest,
+            kind==K_FILL ? (const void *)fill_pattern : (const void *)src,
+            blocks);
     else
         other[kind-K_OVER][variant](dest,src,blocks,constants(kind));
 }
