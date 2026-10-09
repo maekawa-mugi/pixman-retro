@@ -129,7 +129,7 @@ static int measure_case(int kind,int width,int height)
     pixman_op_t op=PIXMAN_OP_OVER;
     unsigned int loops,i;
     int format=0;
-    uint64_t start, elapsed, times[2] = {0,0};
+    uint64_t start, times[2] = {0,0};
     uint64_t trial_us[API_TRIALS], temp;
     unsigned int trial, k;
     unsigned int mmi_calls[2]={0,0};
