@@ -120,12 +120,24 @@ static const void *constants(int kind){
     return src;
 }
 static void invoke(int kind,unsigned int variant,unsigned int blocks) {
+    /* Both source choices must agree in type before the call. In
+     * particular, PS2SDK's cross GCC rejects conditional expressions
+     * mixing uint32_t * and uint8_t * even when passed to const void *.
+     */
+    const void *pixels = src;
+
     if(kind<=K_FILL)
-        basic[kind][variant](dest,kind==K_FILL?fill_pattern:src,blocks);
+    {
+        if(kind==K_FILL)
+            pixels=fill_pattern;
+        basic[kind][variant](dest,pixels,blocks);
+    }
     else
-        other[kind-K_OVER][variant](
-            dest,kind==K_SOLID_OVER && variant==1?solid_quad:src,
-            blocks,constants(kind));
+    {
+        if(kind==K_SOLID_OVER && variant==1)
+            pixels=solid_quad;
+        other[kind-K_OVER][variant](dest,pixels,blocks,constants(kind));
+    }
 }
 static void prepare(int kind,unsigned int n) {
     unsigned int i;
