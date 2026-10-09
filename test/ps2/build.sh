@@ -3,6 +3,8 @@
 set -euo pipefail
 source_dir=$(cd "$(dirname "$0")/../.." && pwd)
 output_dir=${1:-"$source_dir/build-ps2-mmi"}
+build_jobs=${BUILD_JOBS:-${JOBS:-$(nproc)}}
+(( build_jobs >= 1 )) || { echo "BUILD_JOBS must be >= 1" >&2; exit 2; }
 : "${PS2DEV:?Set PS2DEV to the PS2 toolchain root}"
 : "${PS2SDK:?Set PS2SDK to the PS2 SDK root}"
 cc=${CC:-"$PS2DEV/ee/bin/mips64r5900el-ps2-elf-gcc"}
@@ -55,41 +57,58 @@ if [[ -f "$output_dir/library/meson-private/coredata.dat" ]]; then
     fi
 fi
 "${setup[@]}"
-meson compile -C "$output_dir/library"
+meson compile -C "$output_dir/library" -j "$build_jobs"
+# Independent EE test objects can be compiled concurrently after Meson
+# has produced the generated headers. Wait for every object before linking.
+compile_pids=()
+queue_compile() {
+    "$cc" "$@" &
+    compile_pids+=("$!")
+    if (( ${#compile_pids[@]} >= build_jobs )); then
+        wait "${compile_pids[0]}"
+        compile_pids=("${compile_pids[@]:1}")
+    fi
+}
+finish_compiles() {
+    local pid
+    for pid in "${compile_pids[@]}"; do wait "$pid"; done
+    compile_pids=()
+}
 wrap_flags=()
 for name in add copy fill in_a8 over 8888_to_0565 ca_over ca_over_solid over_solid_a8 over_image_a8 over_image_ca over_8888_0565 nearest_opaque bilinear_lerp bilinear_hsum bilinear_vfinish; do
     wrap_flags+=("-Wl,--wrap=ee_mmi_${name}_quads")
 done
-"$cc" "${flags[@]}" -std=gnu99 -DHAVE_CONFIG_H \
+queue_compile "${flags[@]}" -std=gnu99 -DHAVE_CONFIG_H \
     "-I$output_dir/library/pixman" "-I$source_dir/pixman" \
     -ffunction-sections -fdata-sections -c "$source_dir/test/ps2/main.c" \
     -o "$output_dir/main.o"
-"$cc" "${flags[@]}" -std=gnu99 -DHAVE_CONFIG_H \
+queue_compile "${flags[@]}" -std=gnu99 -DHAVE_CONFIG_H \
     "-I$output_dir/library/pixman" "-I$source_dir/pixman" \
     -c "$source_dir/test/ps2/benchmark.c" -o "$output_dir/benchmark.o"
-"$cc" "${flags[@]}" -std=gnu99 -c "$source_dir/test/ps2/progress.c" -o "$output_dir/progress.o"
-"$cc" "${flags[@]}" -std=gnu99 -c "$source_dir/test/ps2/latency-variants-test.c" -o "$output_dir/latency-variants-test.o"
-"$cc" "${flags[@]}" -c "$source_dir/test/ps2/latency-variants-asm.S" -o "$output_dir/latency-variants-asm.o"
-"$cc" "${flags[@]}" -std=gnu99 -c "$source_dir/test/ps2/throughput-variants-test.c" -o "$output_dir/throughput-variants-test.o"
-"$cc" "${flags[@]}" -c "$source_dir/test/ps2/throughput-core-asm.S" -o "$output_dir/throughput-core-asm.o"
-"$cc" "${flags[@]}" -c "$source_dir/test/ps2/throughput-blend-asm.S" -o "$output_dir/throughput-blend-asm.o"
+queue_compile "${flags[@]}" -std=gnu99 -c "$source_dir/test/ps2/progress.c" -o "$output_dir/progress.o"
+queue_compile "${flags[@]}" -std=gnu99 -c "$source_dir/test/ps2/latency-variants-test.c" -o "$output_dir/latency-variants-test.o"
+queue_compile "${flags[@]}" -c "$source_dir/test/ps2/latency-variants-asm.S" -o "$output_dir/latency-variants-asm.o"
+queue_compile "${flags[@]}" -std=gnu99 -c "$source_dir/test/ps2/throughput-variants-test.c" -o "$output_dir/throughput-variants-test.o"
+queue_compile "${flags[@]}" -c "$source_dir/test/ps2/throughput-core-asm.S" -o "$output_dir/throughput-core-asm.o"
+queue_compile "${flags[@]}" -c "$source_dir/test/ps2/throughput-blend-asm.S" -o "$output_dir/throughput-blend-asm.o"
 suite_objects=("$output_dir/benchmark.o" "$output_dir/progress.o" "$output_dir/latency-variants-test.o" "$output_dir/latency-variants-asm.o" "$output_dir/throughput-variants-test.o" "$output_dir/throughput-core-asm.o" "$output_dir/throughput-blend-asm.o")
 model_flags=()
 for name in add copy fill in_a8 over 8888_to_0565 ca_over ca_over_solid over_solid_a8 over_image_a8 over_image_ca over_8888_0565 nearest_opaque bilinear_lerp bilinear_hsum bilinear_vfinish; do
     model_flags+=("-Dee_mmi_${name}_quads=b_ee_mmi_${name}_quads")
 done
-"$cc" "${flags[@]}" "${model_flags[@]}" -c "$source_dir/test/ee-mmi-host-reference.c" -o "$output_dir/b-models.o"
+queue_compile "${flags[@]}" "${model_flags[@]}" -c "$source_dir/test/ee-mmi-host-reference.c" -o "$output_dir/b-models.o"
 suite_objects+=("$output_dir/b-models.o")
 for spec in 'ee-mmi-suite:ee_kernel_suite_main' 'ee-mmi-ca-fused-test:ee_test_ca' 'ee-mmi-a8-fused-test:ee_test_solid_a8' 'ee-mmi-565-fused-test:ee_test_565' 'ee-mmi-image-a8-fused-test:ee_test_image_a8' 'ee-mmi-image-ca-fused-test:ee_test_image_ca' 'ee-mmi-scale-test:ee_test_scale' 'ee-mmi-bilinear-4tap-test:ee_test_bilinear4'; do
     file=${spec%%:*}
     entry=${spec#*:}
-    "$cc" "${flags[@]}" -std=gnu99 -DPS2_TEST_PROGRESS -Dmain="$entry" -c "$source_dir/test/$file.c" -o "$output_dir/$file.o"
+    queue_compile "${flags[@]}" -std=gnu99 -DPS2_TEST_PROGRESS -Dmain="$entry" -c "$source_dir/test/$file.c" -o "$output_dir/$file.o"
     suite_objects+=("$output_dir/$file.o")
 done
-"$cc" "${flags[@]}" -std=gnu99 -c "$source_dir/test/ee-mmi-bench.c" -o "$output_dir/ee-mmi-bench.o"
+queue_compile "${flags[@]}" -std=gnu99 -c "$source_dir/test/ee-mmi-bench.c" -o "$output_dir/ee-mmi-bench.o"
 suite_objects+=("$output_dir/ee-mmi-bench.o")
-"$cc" -o "$output_dir/pixman_mmi_test.elf" "$output_dir/main.o" "${suite_objects[@]}" \
+finish_compiles
+"$cc" -o "$output_dir/pixman_mmi.elf" "$output_dir/main.o" "${suite_objects[@]}" \
     -Wl,--start-group "$output_dir/library/pixman/libpixman-1.a" \
     "$output_dir/library/pixman/libpixman-ee-mmi.a" -Wl,--end-group \
-    "-Wl,-Map,$output_dir/pixman_mmi_test.map" "${wrap_flags[@]}" "${link_flags[@]}"
-printf '\nELF: %s/pixman_mmi_test.elf\n' "$output_dir"
+    "-Wl,-Map,$output_dir/pixman_mmi.map" "${wrap_flags[@]}" "${link_flags[@]}"
+printf '\nELF: %s/pixman_mmi.elf (parallel jobs=%s)\n' "$output_dir" "$build_jobs"
