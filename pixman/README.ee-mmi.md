@@ -233,7 +233,7 @@ A complete model of the committed instruction sequence also passed
 
 ## Performance fixes and targeted experimental profiles
 
-On `codex/ps2-mmi-fixes-and-bench-20261009`, the correct-by-design
+On `codex/ps2-mmi-fixes-squashed-20261009`, the correct-by-design
 4-tap bilinear SIMD path is selected *once* per wide, aligned row.
 The previous `n >= 64` check inside the 16-pixel processing loop
 made a width-64 draw use the 4-tap SIMD kernel for just 16 pixels.
@@ -271,7 +271,7 @@ default.
 
 For a one-shot WSL PS2 ELF on the fix branch:
 ```sh
-git clone -b codex/ps2-mmi-fixes-and-bench-20261009 \
+git clone -b codex/ps2-mmi-fixes-squashed-20261009 \
   https://github.com/maekawa-mugi/pixman-retro.git
 cd pixman-retro
 bash test/ps2/build-from-clone.sh
