@@ -83,14 +83,14 @@ This branch also tests the other major EE scanline primitives:
 | ARGB8888 → RGB565 SRC | current u1 | u2 | none |
 | ARGB8888 → RGB565 fused OVER | current u1 | u2 | none |
 
-Ten experimental implementations are provided in
+Eleven experimental implementations are provided in
 `throughput-core-asm.S` and `throughput-blend-asm.S`. The
-`ps2_throughput_run()` regression checks all 17 baseline/candidate
-kernels at all 65 block counts (0..64), giving **1105 comparisons**,
+`ps2_throughput_run()` regression checks all 19 baseline/candidate
+kernels at all 65 block counts (0..64), giving **1235 comparisons**,
 including full-buffer canaries, a scalar oracle and unchanged source.
 An invalid candidate prevents benchmark output.
 
-`THROUGHPUT_CSV` provides **357 measurements** (15 kernels x seven
+`THROUGHPUT_CSV` provides **399 measurements** (15 kernels x seven
 sizes: 16, 32, 64, 128, 256, 512 and 1024 destination bytes) with 256
 repeated calls in three independent trials each (rotated candidate order) and identical seeded inputs per size/family.
 `PS2_THROUGHPUT_TEST_FAULT` deliberately corrupts one ADD-u8 pixel;
@@ -111,3 +111,51 @@ library's kernel dispatch nor the shared feature branch is replaced.
 speed rankings are still outstanding.** Large unrolls can increase
 I-cache pressure; the manual's dependency latency alone cannot predict
 the winner.
+
+## Performance fixes and targeted experimental profiles
+
+On `codex/ps2-mmi-fixes-squashed-20261009`, the correct-by-design
+4-tap bilinear SIMD path is selected *once* per wide, aligned row.
+The previous `n >= 64` check inside the 16-pixel processing loop
+made a width-64 draw use the 4-tap SIMD kernel for just 16 pixels.
+Remaining batches now stay in the 4-tap pipeline, with sub-16 tails
+handled safely.
+
+RGB565 OVER with an unaligned ARGB8888 source now stages only 32
+source bytes per eight pixels and calls the already-fused RGB565 OVER
+kernel. It no longer expands eight 565 pixels to 8888 in C, runs
+general OVER, and then repacks in a second MMI call.
+
+The additional **solid translucent OVER** candidate loads a repeated
+solid quad and computes its inverse-alpha vectors once, outside the
+per-quad loop. It is *test-only* until PS2 measurements prove faster
+than the baseline staged source. Production solid dispatch is unchanged.
+
+The integrated API benchmark now runs **24 workloads x 3 sizes = 72**
+correctness/timing comparisons, each side rendered from a fresh
+destination in **7 independent trials**, reporting median microseconds
+and MMI call coverage. Dedicated workloads isolate nearest-interior
+sampling, repeat/clipping boundaries, full-4-tap wide bilinear and
+its boundary case, unaligned 565 OVER, and translucent solid OVER.
+The accelerated side must enter at least one wrapped MMI kernel on the
+large, targeted workloads; otherwise the measurement fails rather
+than silently claiming a faster path.
+
+Comparing the Pixman API optimized chain vs generic Pixman C on the
+bilinear-wide case measures whether the currently split (two HSUM,
+one VFINISH, one OVER) implementation is worth using. This is an
+**end-to-end comparison against scalar C**, not a claim to have
+implemented a new fused 4-tap MMI kernel. Nearest interior/boundary
+workloads similarly identify the benefit (or cost) of doing repeat
+checks in the sampler; an in-bounds-only sampler is not enabled by
+default.
+
+For a one-shot WSL PS2 ELF on the fix branch:
+```sh
+git clone -b codex/ps2-mmi-fixes-squashed-20261009 \
+  https://github.com/maekawa-mugi/pixman-retro.git
+cd pixman-retro
+bash test/ps2/build-from-clone.sh
+```
+
+**No PS2 real-hardware speedup is claimed without a target run.**

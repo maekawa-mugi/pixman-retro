@@ -351,7 +351,6 @@ over_565_pixel (uint16_t *dst, uint32_t s)
 static void
 over_565_span (uint16_t *dst, const uint32_t *src, size_t n)
 {
-    uint32_t dst_quads[8] __attribute__((aligned(16)));
     uint32_t src_quads[8] __attribute__((aligned(16)));
     unsigned int i;
 
@@ -362,8 +361,10 @@ over_565_span (uint16_t *dst, const uint32_t *src, size_t n)
         return;
     }
 
-    /* Destination needs aligned SQ, source is copied to aligned
-     * scratch so an unaligned texture can still use the MMI core. */
+    /* The fused 565 MMI kernel requires aligned destination stores.
+     * Unaligned 8888 source is staged alone: no scalar expansion of the
+     * RGB565 destination and no two-stage 8888 OVER + 565 conversion.
+     */
     while (n && ((uintptr_t)dst & 15))
     {
         over_565_pixel (dst++, *src++);
@@ -386,14 +387,15 @@ over_565_span (uint16_t *dst, const uint32_t *src, size_t n)
     {
         while (n >= 8)
         {
+            /* Load 8 possibly unaligned source pixels into one aligned
+             * 32-byte block, then perform the complete blend in registers.
+             * Preserve source/destination nonoverlap checks above.
+             */
             for (i = 0; i < 8; ++i)
-            {
-                dst_quads[i] = convert_0565_to_0888 (dst[i]);
                 src_quads[i] = src[i];
-            }
 
-            ee_mmi_over_quads (dst_quads, src_quads, 2, over_constants);
-            ee_mmi_8888_to_0565_quads (dst, dst_quads, 1, convert_masks);
+            ee_mmi_over_8888_0565_quads (dst, src_quads, 1,
+                                           over_565_constants);
             dst += 8;
             src += 8;
             n -= 8;

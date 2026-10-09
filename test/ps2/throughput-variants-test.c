@@ -33,6 +33,8 @@ static const uint32_t fused565_c[28] __attribute__((aligned(16))) =
  0x000007e0u,0x000007e0u,0x000007e0u,0x000007e0u,
  0x0000001fu,0x0000001fu,0x0000001fu,0x0000001fu
 };
+static const uint32_t solid_quad[4] __attribute__((aligned(16))) =
+{0x80402010u,0x80402010u,0x80402010u,0x80402010u};
 static const uint32_t fill_pattern[4] __attribute__((aligned(16))) =
 {0x325a7ebdu,0x325a7ebdu,0x325a7ebdu,0x325a7ebdu};
 static volatile uint32_t sink;
@@ -80,10 +82,12 @@ extern void ee_mmi_8888_to_0565_quads(void *,const void *,unsigned int,const voi
 extern void ee_mmi_8888_to_0565_u2_quads(void *,const void *,unsigned int,const void *);
 extern void ee_mmi_over_8888_0565_quads(void *,const void *,unsigned int,const void *);
 extern void ee_mmi_over_8888_0565_u2_quads(void *,const void *,unsigned int,const void *);
+extern void ee_mmi_over_solid_direct_quads(void *,const void *,unsigned int,const void *);
 
-enum {K_ADD,K_COPY,K_FILL,K_OVER,K_IN_A8,K_TO565,K_FUSED565,K_COUNT};
+enum {K_ADD,K_COPY,K_FILL,K_OVER,K_IN_A8,K_TO565,K_FUSED565,K_SOLID_OVER,K_COUNT};
 static const char *const kinds[K_COUNT]={
-    "ADD","COPY","FILL","OVER_8888","IN_A8","SRC_8888_565","OVER_RGB565"
+    "ADD","COPY","FILL","OVER_8888","IN_A8","SRC_8888_565","OVER_RGB565",
+    "SOLID_OVER"
 };
 static const char *const labels[3]={"baseline","u2","u8"};
 static const char *const labels_over[2]={"baseline","u2"};
@@ -93,11 +97,12 @@ static const func3 basic[3][3] = {
     {ee_mmi_copy_quads,ee_mmi_copy_u2_quads,ee_mmi_copy_u8_quads},
     {ee_mmi_fill_quads,ee_mmi_fill_u2_quads,ee_mmi_fill_u8_quads}
 };
-static const func4 other[4][2] = {
+static const func4 other[5][2] = {
     {ee_mmi_over_quads,ee_mmi_over_u2_quads},
     {ee_mmi_in_a8_quads,ee_mmi_in_a8_predecode_quads},
     {ee_mmi_8888_to_0565_quads,ee_mmi_8888_to_0565_u2_quads},
-    {ee_mmi_over_8888_0565_quads,ee_mmi_over_8888_0565_u2_quads}
+    {ee_mmi_over_8888_0565_quads,ee_mmi_over_8888_0565_u2_quads},
+    {ee_mmi_over_quads,ee_mmi_over_solid_direct_quads}
 };
 static unsigned int variants(int kind){return kind<=K_FILL?3u:2u;}
 static const char *label(int kind,unsigned int variant){
@@ -111,13 +116,16 @@ static const void *constants(int kind){
     if(kind==K_IN_A8)return half;
     if(kind==K_TO565)return c565;
     if(kind==K_FUSED565)return fused565_c;
+    if(kind==K_SOLID_OVER)return over_c;
     return src;
 }
 static void invoke(int kind,unsigned int variant,unsigned int blocks) {
     if(kind<=K_FILL)
         basic[kind][variant](dest,kind==K_FILL?fill_pattern:src,blocks);
     else
-        other[kind-K_OVER][variant](dest,src,blocks,constants(kind));
+        other[kind-K_OVER][variant](
+            dest,kind==K_SOLID_OVER && variant==1?solid_quad:src,
+            blocks,constants(kind));
 }
 static void prepare(int kind,unsigned int n) {
     unsigned int i;
@@ -126,6 +134,9 @@ static void prepare(int kind,unsigned int n) {
         src[i]=(uint8_t)rnd();
         dest[i]=(uint8_t)rnd();
     }
+    if(kind==K_SOLID_OVER)
+        for(i=0;i<CAP+GUARD;i++)
+            src[i]=((const uint8_t *)solid_quad)[i&15u];
     memcpy(oracle,dest,sizeof(dest));
     memcpy(original_src,src,sizeof(src));
     if(kind==K_ADD){
@@ -137,7 +148,7 @@ static void prepare(int kind,unsigned int n) {
         memcpy(oracle,src,16*n);
     else if(kind==K_FILL){
         for(i=0;i<16*n;i++)oracle[i]=((const uint8_t *)fill_pattern)[i%16];
-    }else if(kind==K_OVER){
+    }else if(kind==K_OVER || kind==K_SOLID_OVER){
         for(i=0;i<4*n;i++)
             ((uint32_t *)oracle)[i]=ref_over(
                 ((const uint32_t *)src)[i],((const uint32_t *)dest)[i]);

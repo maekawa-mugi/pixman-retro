@@ -256,6 +256,7 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
             pixman_fixed_to_bilinear_weight (vx) == 0 &&
             (unit_x & (pixman_fixed_1 - 1)) == 0;
         pixman_bool_t two_tap = disty == 0 || two_tap_vertical;
+        pixman_bool_t wide_four_tap = FALSE;
 
         dst_line += dst_stride;
 
@@ -300,11 +301,12 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
                 --n;
             }
 
-            /* The /256 horizontal numerators feed an exact /65536
-             * MMI vertical pass. Only run this three-kernel path on
-             * wide spans; short spans avoid the staging/setup cost.
+            /* Decide the 4-tap policy once using the original row width.
+             * Re-testing n >= 64 inside the batch loop accelerated only
+             * the first 16 pixels of a 64-pixel row; peeling also reduced n below 64.
              */
-            if (!two_tap)
+            wide_four_tap = !two_tap && width >= 64;
+            if (wide_four_tap)
             {
                 int j;
                 for (j = 0; j < 8; ++j)
@@ -319,14 +321,14 @@ ee_mmi_composite_bilinear_over_8888 (pixman_implementation_t *imp,
             {
                 size_t count;
 
-                if (!two_tap && n >= 64)
+                if (wide_four_tap)
                 {
                     /* Four independent tap arrays with per-pixel X
                      * weights. Vertical fraction is shared by row.
                      * This preserves all 16 bits of the horizontal
                      * numerator until the exact MMI vertical finish.
                      */
-                    count = 16;
+                    count = n >= 16 ? 16 : (n & ~(size_t)3);
                     for (i = 0; i < (int)count; ++i)
                     {
                         int x1 = pixman_fixed_to_int (vx);

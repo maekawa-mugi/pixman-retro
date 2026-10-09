@@ -3,7 +3,7 @@
 This branch includes the **complete v5 source tree imported from the
 uploaded ZIP**, without generated artifacts or `.git` from the ZIP.
 The standalone SDK build and on-screen A/B regression suite are in
-`test/ps2/`. The latency and throughput experiments are integrated into the test harness. Production Pixman dispatch still uses baseline kernels. Host validation includes injected latency, throughput and unattributed group failures.
+`test/ps2/`. The latency and throughput experiments, Solid OVER candidate and 72-case API benchmark are integrated into the test harness. Production Pixman dispatch still uses baseline kernels. Host validation includes injected latency, throughput and unattributed group failures.
 
 ## Ubuntu / WSL
 
@@ -21,7 +21,7 @@ source "$HOME/.venvs/ps2-meson/bin/activate"
 Then, from any working directory:
 
 ```bash
-git clone -b mmi \
+git clone -b codex/ps2-mmi-fixes-squashed-20261009 \
   https://github.com/maekawa-mugi/pixman-retro.git
 cd pixman-retro
 export PS2DEV="${PS2DEV:-/usr/local/ps2dev}"
