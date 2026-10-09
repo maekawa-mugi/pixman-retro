@@ -22,6 +22,7 @@
 #define W 256
 #define H 64
 #define COUNT (W*H)
+#define API_TRIALS 7
 static uint32_t src32[COUNT] __attribute__((aligned(16)));
 static uint32_t dst32[COUNT] __attribute__((aligned(16)));
 static uint32_t ca32[COUNT] __attribute__((aligned(16)));
@@ -104,6 +105,8 @@ enum {
     B_NEAREST, B_BILINEAR,
     B_NEAREST_1X, B_NEAREST_XRGB_1X,
     B_BILINEAR_X_ONLY, B_BILINEAR_Y_ONLY,
+    B_NEAREST_INTERIOR, B_NEAREST_EDGE,
+    B_BILINEAR_4TAP_WIDE, B_BILINEAR_4TAP_EDGE,
     B_COUNT
 };
 static const char *const names[B_COUNT]={
@@ -112,7 +115,9 @@ static const char *const names[B_COUNT]={
     "SRC_8888","IN_A8","FILL_8888","BLT_8888",
     "NEAREST_OVER","BILINEAR_OVER",
     "NEAREST_1X","NEAREST_XRGB_1X",
-    "BILINEAR_X_ONLY","BILINEAR_Y_ONLY"
+    "BILINEAR_X_ONLY","BILINEAR_Y_ONLY",
+    "NEAREST_INTERIOR","NEAREST_EDGE",
+    "BILINEAR_4TAP_WIDE","BILINEAR_4TAP_EDGE"
 };
 static int measure_case(int kind,int width,int height)
 {
@@ -123,6 +128,9 @@ static int measure_case(int kind,int width,int height)
     unsigned int loops,i;
     int format=0;
     uint64_t start, elapsed, times[2] = {0,0};
+    uint64_t trial_us[API_TRIALS], temp;
+    unsigned int trial, k;
+    unsigned int mmi_calls[2]={0,0};
     int wrong_side[2] = {0,0};
     uint32_t hash;
     int side;
@@ -172,21 +180,32 @@ static int measure_case(int kind,int width,int height)
         }
         if(kind==B_NEAREST || kind==B_BILINEAR ||
            kind==B_NEAREST_1X || kind==B_NEAREST_XRGB_1X ||
-           kind==B_BILINEAR_X_ONLY || kind==B_BILINEAR_Y_ONLY)
+           kind==B_BILINEAR_X_ONLY || kind==B_BILINEAR_Y_ONLY ||
+           kind==B_NEAREST_INTERIOR || kind==B_NEAREST_EDGE ||
+           kind==B_BILINEAR_4TAP_WIDE || kind==B_BILINEAR_4TAP_EDGE)
         {
             pixman_fixed_t sx=pixman_fixed_1,sy=pixman_fixed_1;
             if(kind==B_NEAREST || kind==B_BILINEAR)
                 sx=sy=pixman_fixed_1/2;
+            else if(kind==B_NEAREST_INTERIOR)
+                sx=3*pixman_fixed_1/4;
+            else if(kind==B_BILINEAR_4TAP_WIDE || kind==B_BILINEAR_4TAP_EDGE)
+                sx=sy=3*pixman_fixed_1/4;
             else if(kind==B_BILINEAR_X_ONLY)
                 sx=pixman_fixed_1/2;
             else if(kind==B_BILINEAR_Y_ONLY)
                 sy=pixman_fixed_1/2;
 
             pixman_transform_init_scale(&scale,sx,sy);
+            if(kind==B_NEAREST_EDGE)
+                scale.matrix[0][2]=pixman_int_to_fixed(240);
+            else if(kind==B_BILINEAR_4TAP_EDGE)
+                scale.matrix[0][2]=pixman_int_to_fixed(224);
             pixman_image_set_transform(src,&scale);
             pixman_image_set_filter(src,
                 kind==B_NEAREST || kind==B_NEAREST_1X ||
-                kind==B_NEAREST_XRGB_1X ?
+                kind==B_NEAREST_XRGB_1X ||
+                kind==B_NEAREST_INTERIOR || kind==B_NEAREST_EDGE ?
                 PIXMAN_FILTER_NEAREST:PIXMAN_FILTER_BILINEAR,0,0);
             pixman_image_set_repeat(src,PIXMAN_REPEAT_PAD);
         }
@@ -195,80 +214,103 @@ static int measure_case(int kind,int width,int height)
         else if(kind==B_IN_A8)op=PIXMAN_OP_IN;
     }
 
-    /* Correctness and timing consume the same output; no repeated benchmark pass. */
+    /* The C oracle renders once; A/B are timed in seven independent
+     * trials, resetting destination outside the timer each time.
+     * Median is robust to transient scheduling/timer disturbances.
+     */
     loops=1;
-    /* Identical initial destination and iteration count for oracle, A and B. */
-    for (side = -1; side < 2; ++side)
+    for(side=-1;side<2;++side)
     {
-        initialize_dest();
-        global_implementation = side == 0 ? impl_a : impl_b;
-        calls_before = ps2_mmi_call_count();
-        start = ps2_ticks_now();
-        for (i = 0; i < loops; ++i)
+        global_implementation=side==0?impl_a:impl_b;
+        calls_before=ps2_mmi_call_count();
+        for(trial=0;trial<(side==-1?1u:API_TRIALS);++trial)
         {
-            if (kind == B_BLT)
+            initialize_dest();
+            start=ps2_ticks_now();
+            for(i=0;i<loops;++i)
             {
-                if (side == -1)
+                if (kind == B_BLT)
                 {
-                    int row;
-                    for (row = 0; row < height; ++row)
-                        memcpy(dst32 + row * W, src32 + row * W, width * 4);
+                    if (side == -1)
+                    {
+                        int row;
+                        for (row = 0; row < height; ++row)
+                            memcpy(dst32 + row * W, src32 + row * W, width * 4);
+                    }
+                    else if (!pixman_blt(src32, dst32, W, W, 32, 32,
+                                         0, 0, 0, 0, width, height))
+                    {
+                        /* Generic Pixman can decline BLT; compare its C fallback. */
+                        int row;
+                        for (row = 0; row < height; ++row)
+                            memcpy(dst32 + row * W, src32 + row * W, width * 4);
+                    }
                 }
-                else if (!pixman_blt(src32, dst32, W, W, 32, 32,
-                                     0, 0, 0, 0, width, height))
+                else if (kind == B_FILL)
                 {
-                    /* Generic Pixman can decline BLT; compare its C fallback. */
-                    int row;
-                    for (row = 0; row < height; ++row)
-                        memcpy(dst32 + row * W, src32 + row * W, width * 4);
+                    if (side == -1)
+                    {
+                        int row, x;
+                        for (row = 0; row < height; ++row)
+                        for (x = 0; x < width; ++x)
+                            dst32[row * W + x] = 0x80402010u;
+                    }
+                    else if (!pixman_fill(dst32, W, 32, 0, 0,
+                                          width, height, 0x80402010u)) break;
                 }
+                else if (side == -1)
+                    oracle_composite(op, src, mask, dst, width, height);
+                else
+                    pixman_image_composite32(op, src, mask, dst,
+                                             0, 0, 0, 0, 0, 0, width, height);
             }
-            else if (kind == B_FILL)
-            {
-                if (side == -1)
-                {
-                    int row, x;
-                    for (row = 0; row < height; ++row)
-                    for (x = 0; x < width; ++x)
-                        dst32[row * W + x] = 0x80402010u;
-                }
-                else if (!pixman_fill(dst32, W, 32, 0, 0,
-                                      width, height, 0x80402010u)) break;
-            }
-            else if (side == -1)
-                oracle_composite(op, src, mask, dst, width, height);
+                trial_us[trial]=ps2_elapsed_us(start);
+            if(side==-1)
+                memcpy(correct_bytes,result_bits(format),result_size(format));
             else
-                pixman_image_composite32(op, src, mask, dst,
-                                         0, 0, 0, 0, 0, 0, width, height);
+            {
+                int wrong;
+#ifdef PS2_TEST_HOST
+                const char *fault=getenv("PS2_BENCH_TEST_FAULT");
+                if(fault && *fault=='A'+side && kind==0 && width==16)
+                    ((uint8_t *)result_bits(format))[0]^=1;
+#endif
+                wrong=i!=loops ||
+                      memcmp(correct_bytes,result_bits(format),result_size(format))!=0;
+                wrong_side[side]|=wrong;
+            }
         }
-        elapsed = ps2_elapsed_us(start);
-        if (side != 0 && ps2_mmi_call_count() != calls_before)
+        if(side!=0 && ps2_mmi_call_count()!=calls_before)
         {
             ++false_mmi_calls;
-            fprintf(stderr, "FAIL C chain invoked MMI: %s side=%d\n", names[kind], side);
+            fprintf(stderr,"FAIL C chain invoked MMI: %s side=%d\n",
+                    names[kind],side);
         }
-        if (side == -1)
-            memcpy(correct_bytes, result_bits(format), result_size(format));
-        else
+        if(side!=-1)
         {
-            int wrong;
-#ifdef PS2_TEST_HOST
-            /* Host verification exercises red X without corrupting target builds. */
-            const char *fault = getenv("PS2_BENCH_TEST_FAULT");
-            if (fault && *fault == 'A' + side && kind == 0 && width == 16)
-                ((uint8_t *)result_bits(format))[0] ^= 1;
-#endif
-            wrong = i != loops || memcmp(correct_bytes, result_bits(format), result_size(format)) != 0;
-            if (wrong) ++bad_rows[side];
-            times[side] = elapsed;
-            wrong_side[side] = wrong;
-            hash = checksum(format);
-            printf("PIXMAN_AB,%c,%s,%d,%d,%u,%lu.%03lu,%c,%08lx\n",
-                   'A' + side, names[kind], width, height, loops,
-                   (unsigned long)(elapsed / 1000), (unsigned long)(elapsed % 1000),
-                   wrong ? 'X' : 'O', (unsigned long)hash);
+            for(trial=1;trial<API_TRIALS;++trial)
+                for(k=trial;k>0 && trial_us[k]<trial_us[k-1];--k)
+                {
+                    temp=trial_us[k];
+                    trial_us[k]=trial_us[k-1];
+                    trial_us[k-1]=temp;
+                }
+            times[side]=trial_us[API_TRIALS/2];
+            if(wrong_side[side])++bad_rows[side];
+            hash=checksum(format);
+            mmi_calls[side]=ps2_mmi_call_count()-calls_before;
+            printf("PIXMAN_AB,%c,%s,%d,%d,%u,%u,%lu.%03lu,%c,%08lx,MMI=%u\n",
+                   'A'+side,names[kind],width,height,loops,(unsigned)API_TRIALS,
+                   (unsigned long)(times[side]/1000),
+                   (unsigned long)(times[side]%1000),
+                   wrong_side[side]?'X':'O',(unsigned long)hash,mmi_calls[side]);
         }
     }
+    if(width>=64 &&
+       (kind==B_NEAREST_INTERIOR || kind==B_BILINEAR_4TAP_WIDE) &&
+       mmi_calls[0]==0)
+        printf("PIXMAN_PATH_WARNING,%s,%d,%d,MMI_not_reached\n",
+               names[kind],width,height);
     ++completed;
     ps2_progress_record(times[0],times[1],wrong_side[0],wrong_side[1]);
     fflush(stdout);
@@ -294,16 +336,16 @@ int ps2_benchmark_run(pixman_implementation_t *accelerated)
     memset(bad_rows, 0, sizeof(bad_rows));
     completed = false_mmi_calls = 0;
     initialize_inputs();
-    puts("PIXMAN_AB_CSV,side,workload,width,height,iterations,ms,result,checksum");
+    puts("PIXMAN_AB_CSV,side,workload,width,height,iterations,trials,median_ms,result,checksum,mmi_calls");
     for(kind=0;kind<B_COUNT;kind++)
         for(j=0;j<3;j++)
         {
             char label[64];
-            snprintf(label,sizeof(label),"API %2d/54 %s %dx%d",kind*3+j+1,names[kind],widths[j],heights[j]);
+            snprintf(label,sizeof(label),"API %2d/%d %s %dx%d",kind*3+j+1,B_COUNT*3,names[kind],widths[j],heights[j]);
             ps2_progress_stage(label);
             failed += measure_case(kind,widths[j],heights[j]);
         }
-    if (failed || false_mmi_calls || completed != 54)
+    if (failed || false_mmi_calls || completed != (unsigned int)B_COUNT*3u)
         ++bad_rows[0], ++bad_rows[1];
 
     global_implementation = impl_a;
