@@ -230,3 +230,51 @@ independent seven-bit Pixman reference, including horizontal
 numerators, vertical pixels, source immutability and buffer guards.
 A complete model of the committed instruction sequence also passed
 700 randomized cases; this is not hardware validation.
+
+## Performance fixes and targeted experimental profiles
+
+On `codex/ps2-mmi-fixes-and-bench-20261009`, the correct-by-design
+4-tap bilinear SIMD path is selected *once* per wide, aligned row.
+The previous `n >= 64` check inside the 16-pixel processing loop
+made a width-64 draw use the 4-tap SIMD kernel for just 16 pixels.
+Remaining batches now stay in the 4-tap pipeline, with sub-16 tails
+handled safely.
+
+RGB565 OVER with an unaligned ARGB8888 source now stages only 32
+source bytes per eight pixels and calls the already-fused RGB565 OVER
+kernel. It no longer expands eight 565 pixels to 8888 in C, runs
+general OVER, and then repacks in a second MMI call.
+
+The additional **solid translucent OVER** candidate loads a repeated
+solid quad and computes its inverse-alpha vectors once, outside the
+per-quad loop. It is *test-only* until PS2 measurements prove faster
+than the baseline staged source. Production solid dispatch is unchanged.
+
+The integrated API benchmark now runs **24 workloads x 3 sizes = 72**
+correctness/timing comparisons, each side rendered from a fresh
+destination in **7 independent trials**, reporting median microseconds
+and MMI call coverage. Dedicated workloads isolate nearest-interior
+sampling, repeat/clipping boundaries, full-4-tap wide bilinear and
+its boundary case, unaligned 565 OVER, and translucent solid OVER.
+The accelerated side must enter at least one wrapped MMI kernel on the
+large, targeted workloads; otherwise the measurement fails rather
+than silently claiming a faster path.
+
+Comparing the Pixman API optimized chain vs generic Pixman C on the
+bilinear-wide case measures whether the currently split (two HSUM,
+one VFINISH, one OVER) implementation is worth using. This is an
+**end-to-end comparison against scalar C**, not a claim to have
+implemented a new fused 4-tap MMI kernel. Nearest interior/boundary
+workloads similarly identify the benefit (or cost) of doing repeat
+checks in the sampler; an in-bounds-only sampler is not enabled by
+default.
+
+For a one-shot WSL PS2 ELF on the fix branch:
+```sh
+git clone -b codex/ps2-mmi-fixes-and-bench-20261009 \
+  https://github.com/maekawa-mugi/pixman-retro.git
+cd pixman-retro
+bash test/ps2/build-from-clone.sh
+```
+
+**No PS2 real-hardware speedup is claimed without a target run.**

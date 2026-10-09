@@ -4,7 +4,8 @@ on:
   push:
     branches:
       - 'feat/ps2-ee-mmi-*'
-      - 'mmi'
+      - 'ps2-ee-mmi'
+      - 'codex/ps2-mmi-fixes-*'
     paths:
       - 'pixman/**'
       - 'test/**'

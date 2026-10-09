@@ -21,7 +21,7 @@ source "$HOME/.venvs/ps2-meson/bin/activate"
 Then, from any working directory:
 
 ```bash
-git clone -b mmi \
+git clone -b ps2-ee-mmi \
   https://github.com/maekawa-mugi/pixman-retro.git
 cd pixman-retro
 export PS2DEV="${PS2DEV:-/usr/local/ps2dev}"
