@@ -77,10 +77,10 @@ static void refresh(int force)
 {
     if(!force && ps2_elapsed_us(last_refresh)<100000)return;
     last_refresh=ps2_ticks_now();
-    scr_setfontcolor(WHITE);scr_setXY(0,3);scr_printf("%-68.68s",stage);
+    scr_setfontcolor(WHITE);scr_setXY(0,3);scr_printf("ACTIVE %-60.60s",stage);
     scr_setXY(0,4);
-    if(batch_total)scr_printf("Batch %u/%u  |  checks %u                         ",batch_done,batch_total,checks);
-    else scr_printf("Checks %u  |  groups %u/17                       ",checks,groups);
+    if(batch_total)scr_printf("PROGRESS %5u/%-5u  CHECKS %-8u FAIL GROUPS %-3u   ",batch_done,batch_total,checks,failed_groups);
+    else scr_printf("PROGRESS %5u/%-5d  CHECKS %-8u FAIL GROUPS %-3u   ",groups,SUITES,checks,failed_groups);
     if(current>=0)draw_row(current);
 #ifdef PS2_TEST_HOST
     if(getenv("PS2_PROGRESS_TRACE") && current>=0)
@@ -95,7 +95,9 @@ void ps2_progress_init(void)
     memset(cells,0,sizeof(cells));checks=groups=failed_groups=batch_done=batch_total=0;
     kernel_variant=0;current=-1;snprintf(stage,sizeof(stage),"Starting");last_refresh=ps2_ticks_now();
     scr_clear();scr_setfontcolor(WHITE);
-    scr_printf("Pixman PS2 A/B tests + timing\nA: EE MMI  B: scalar C\nO: correct  X: incorrect  |  per-suite time\n");
+    scr_setXY(0,0);scr_printf("PIXMAN RETRO | PS2 EE MMI | VALIDATION + BENCHMARK");
+    scr_setXY(0,1);scr_printf("A=MMI   B=scalar C   PASS=O   FAIL=X   time=milliseconds");
+    scr_setXY(0,2);scr_printf("%-20s%-24s%-24s","KERNEL / TEST","A: TEST + TIME","B: TEST + TIME");
     for(i=0;i<SUITES;++i)draw_row(i);
     refresh(1);
 }
@@ -166,10 +168,11 @@ void ps2_progress_kernel_group(const char *name,int failed,uint64_t elapsed)
 void ps2_progress_finish(int failures)
 {
     unsigned int bad_a=0,bad_b=0;int i;
-    snprintf(stage,sizeof(stage),"Complete");refresh(1);
+    snprintf(stage,sizeof(stage),"%s",failures?"COMPLETE - FAIL":"COMPLETE - PASS");refresh(1);
     for(i=0;i<SUITES;++i){draw_row(i);bad_a+=cells[i][0].bad;bad_b+=cells[i][1].bad;}
     scr_setXY(0,23);scr_setfontcolor(failures?RED:GREEN);
-    scr_printf("TEST: %s! failures=%d",failures?"FAIL":"OK",failures);
+    scr_printf("RESULT: %-4s | %2u/%2d GROUPS | %u CHECKS | %d FAILURES    ",
+        failures?"FAIL":"PASS",groups,SUITES,checks,failures);
     printf("INTEGRATED_RESULT,%s,checks=%u,groups=%u,A_bad=%u,B_bad=%u\n",
         failures?"FAIL":"PASS",checks,groups,bad_a,bad_b);fflush(stdout);
 }
