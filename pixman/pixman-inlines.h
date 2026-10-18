@@ -88,6 +88,16 @@ pixman_fixed_to_bilinear_weight (pixman_fixed_t x)
 	   ((1 << BILINEAR_INTERPOLATION_BITS) - 1);
 }
 
+/* Some 32-bit targets typedef int32_t (and pixman_fixed_t) as long. */
+static force_inline pixman_bool_t
+repeat_fixed (pixman_repeat_t mode, pixman_fixed_t *c, int size)
+{
+    int value = *c;
+    pixman_bool_t result = repeat (mode, &value, size);
+    *c = value;
+    return result;
+}
+
 #if BILINEAR_INTERPOLATION_BITS <= 4
 /* Inspired by Filter_32_opaque from Skia */
 static force_inline uint32_t
@@ -499,8 +509,8 @@ fast_composite_scaled_nearest  ## scale_func_name (pixman_implementation_t *imp,
 	max_vy = pixman_int_to_fixed (src_image->bits.height);					\
 												\
 	/* Clamp repeating positions inside the actual samples */				\
-	repeat (PIXMAN_REPEAT_NORMAL, &vx, src_width_fixed);					\
-	repeat (PIXMAN_REPEAT_NORMAL, &vy, max_vy);						\
+	repeat_fixed (PIXMAN_REPEAT_NORMAL, &vx, src_width_fixed);					\
+	repeat_fixed (PIXMAN_REPEAT_NORMAL, &vy, max_vy);						\
     }												\
 												\
     if (PIXMAN_REPEAT_ ## repeat_mode == PIXMAN_REPEAT_PAD ||					\
@@ -524,7 +534,7 @@ fast_composite_scaled_nearest  ## scale_func_name (pixman_implementation_t *imp,
 	y = pixman_fixed_to_int (vy);								\
 	vy += unit_y;										\
 	if (PIXMAN_REPEAT_ ## repeat_mode == PIXMAN_REPEAT_NORMAL)				\
-	    repeat (PIXMAN_REPEAT_NORMAL, &vy, max_vy);						\
+	    repeat_fixed (PIXMAN_REPEAT_NORMAL, &vy, max_vy);						\
 	if (PIXMAN_REPEAT_ ## repeat_mode == PIXMAN_REPEAT_PAD)					\
 	{											\
 	    repeat (PIXMAN_REPEAT_PAD, &y, src_image->bits.height);				\
@@ -792,8 +802,8 @@ bilinear_pad_repeat_get_scanline_bounds (int32_t         source_image_width,
 					 int32_t *       right_tz,
 					 int32_t *       right_pad)
 {
-	int width1 = *width, left_pad1, right_pad1;
-	int width2 = *width, left_pad2, right_pad2;
+	int32_t width1 = *width, left_pad1, right_pad1;
+	int32_t width2 = *width, left_pad2, right_pad2;
 
 	pad_repeat_get_scanline_bounds (source_image_width, vx, unit_x,
 					&width1, &left_pad1, &right_pad1);
@@ -1138,7 +1148,7 @@ fast_composite_scaled_bilinear ## scale_func_name (pixman_implementation_t *imp,
 	    while (width_remain > 0)								\
 	    {											\
 		/* We use src_width_fixed because it can make vx in original source range */	\
-		repeat (PIXMAN_REPEAT_NORMAL, &vx, src_width_fixed);				\
+		repeat_fixed (PIXMAN_REPEAT_NORMAL, &vx, src_width_fixed);				\
 												\
 		/* Wrap around part */								\
 		if (pixman_fixed_to_int (vx) == src_width - 1)					\
@@ -1165,7 +1175,7 @@ fast_composite_scaled_bilinear ## scale_func_name (pixman_implementation_t *imp,
 		    if (flags & FLAG_HAVE_NON_SOLID_MASK)					\
 			mask += num_pixels;							\
 												\
-		    repeat (PIXMAN_REPEAT_NORMAL, &vx, src_width_fixed);			\
+		    repeat_fixed (PIXMAN_REPEAT_NORMAL, &vx, src_width_fixed);			\
 		}										\
 												\
 		/* Normal scanline composite */							\

@@ -69,6 +69,11 @@ option(
   description : 'Use ARM A64 NEON intrinsic optimized paths',
 )
 option(
+  'ee-mmi',
+  type : 'feature',
+  description : 'Use PlayStation 2 Emotion Engine 128-bit MMI paths',
+)
+option(
   'mips-dspr2',
   type : 'feature',
   description : 'Use MIPS32 DSPr2 intrinsic optimized paths',
